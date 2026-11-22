@@ -1,0 +1,21 @@
+{
+  "firmwares": [
+    {
+      "id": "opengp100-0.4",
+      "label": "OpenGP100",
+      "version": "0.4",
+      "file": "opengp100-0.4.sec0",
+      "sha256": "<filled in by `python -m gp100mods firmware-add`>",
+      "notes": "Shown under the version dropdown.",
+      "features": [
+        {
+          "id": "example-switch",
+          "label": "Example option",
+          "description": "Shown as a checkbox. A patch applies only if the bytes at `offset` (relative to update-file section 0) are exactly `old`.",
+          "default": false,
+          "patches": [ { "offset": "0x1234", "old": "00", "new": "01" } ]
+        }
+      ]
+    }
+  ]
+}

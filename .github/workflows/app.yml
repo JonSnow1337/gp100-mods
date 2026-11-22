@@ -1,0 +1,38 @@
+name: app
+on: [push, pull_request]
+jobs:
+  test-and-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Qt system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      - run: pip install -e ".[app,dev]"
+      - name: Tests
+        run: pytest -q
+        env: { QT_QPA_PLATFORM: offscreen }
+
+      - name: Build standalone app
+        shell: bash
+        run: |
+          sep=":"; [ "$RUNNER_OS" = "Windows" ] && sep=";"
+          pyinstaller --noconfirm --windowed --name GP100FirmwareBuilder --collect-all imageio_ffmpeg \
+            --add-data "src/gp100mods/data${sep}gp100mods/data" --paths src packaging/entry.py
+      - name: Smoke test the packaged app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then exe=dist/GP100FirmwareBuilder/GP100FirmwareBuilder.exe
+          elif [ "$RUNNER_OS" = "macOS" ]; then exe=dist/GP100FirmwareBuilder.app/Contents/MacOS/GP100FirmwareBuilder
+          else exe=dist/GP100FirmwareBuilder/GP100FirmwareBuilder; fi
+          QT_QPA_PLATFORM=offscreen "$exe" --selftest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GP100FirmwareBuilder-${{ runner.os }}
+          path: dist/

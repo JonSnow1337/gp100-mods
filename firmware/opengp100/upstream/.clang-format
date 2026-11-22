@@ -1,0 +1,9 @@
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 4
+IndentExternBlock: NoIndent
+ColumnLimit: 80
+BreakBeforeBraces: Allman
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+SortIncludes: Never

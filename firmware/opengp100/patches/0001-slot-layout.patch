@@ -1,0 +1,245 @@
+diff -ruN a/sources/cmake/factory_assets.cmake b/sources/cmake/factory_assets.cmake
+--- a/sources/cmake/factory_assets.cmake
++++ b/sources/cmake/factory_assets.cmake
+@@ -43,11 +43,7 @@
+ add_custom_target(gp100_factory_banks DEPENDS ${GP100_FACTORY_BANKS})
+ add_dependencies(gp100_base.elf gp100_factory_banks)
+ 
+-add_custom_command(TARGET gp100_base.elf POST_BUILD
+-    COMMAND python3 "${GP100_IMAGE_COMPOSER}"
+-            "${CMAKE_CURRENT_BINARY_DIR}/gp100_base.bin" "${GP100_ASSET_DIR}"
+-    COMMENT "Place factory asset banks at their flash offsets"
+-    VERBATIM)
++# slot prototype: banks are placed by tools/pack_slot.py, not composed into the raw image
+ set_property(TARGET gp100_base.elf APPEND PROPERTY LINK_DEPENDS
+     "${GP100_IMAGE_COMPOSER}" "${CMAKE_CURRENT_SOURCE_DIR}/storage/flash_layout.h"
+     ${GP100_FACTORY_BANKS})
+diff -ruN a/sources/cmake/firmware.cmake b/sources/cmake/firmware.cmake
+--- a/sources/cmake/firmware.cmake
++++ b/sources/cmake/firmware.cmake
+@@ -162,13 +162,13 @@
+     -nostartfiles
+     --specs=nano.specs
+     --specs=nosys.specs
+-    -T${CMAKE_CURRENT_SOURCE_DIR}/linker/gp100_flexspi.ld
++    -T${CMAKE_CURRENT_SOURCE_DIR}/linker/gp100_slot.ld
+     -Wl,--gc-sections
+     -Wl,--build-id=none
+     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/gp100_base.map)
+ 
+ set_target_properties(gp100_base.elf PROPERTIES
+-    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/linker/gp100_flexspi.ld;${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt")
++    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/linker/gp100_slot.ld;${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt")
+ 
+ add_custom_command(TARGET gp100_base.elf POST_BUILD
+     COMMAND ${CMAKE_OBJCOPY} -O binary
+diff -ruN a/sources/linker/gp100_slot.ld b/sources/linker/gp100_slot.ld
+--- a/sources/linker/gp100_slot.ld
++++ b/sources/linker/gp100_slot.ld
+@@ -0,0 +1,206 @@
++ENTRY(Reset_Handler)
++
++HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x1000;
++STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x4000;
++
++MEMORY
++{
++    /* Slot-style layout: this image lives inside the vendor app slot at flash
++     * offset 0x80000. 0x80000: 7-word slot header; 0x80020: vector table (the ITCM
++     * payload the vendor bootloader copies to 0x0 and jumps through); then the code. */
++    SLOT_HDR     (r)   : ORIGIN = 0x60080000, LENGTH = 0x0020
++    /* VTOR ignores bits [6:0] and the Cortex-M7 needs the table aligned to its size rounded up to a power of two
++     * (176 vectors = 704 B -> 1 KiB). A table at 0x60080020 made VTOR effectively 0x60080000 (the slot header):
++     * the first interrupt (SysTick) then locked the core. Keep the table 1 KiB aligned. */
++    VECTORS      (rx)  : ORIGIN = 0x60080400, LENGTH = 0x0400
++    /* The first factory bank (rhythm PCM) begins at offset 0x133DDC. */
++    FLASH        (rx)  : ORIGIN = 0x60080800, LENGTH = 0x60133DDC - 0x60080800
++    ITCM         (rwx) : ORIGIN = 0x00000000, LENGTH = 0x00020000
++    DTCM         (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00020000
++    OCRAM        (rwx) : ORIGIN = 0x20200000, LENGTH = 0x00040000
++    SDRAM        (rwx) : ORIGIN = 0x80000000, LENGTH = 0x02000000
++}
++
++SECTIONS
++{
++    /DISCARD/ : { *(.boot_hdr.ivt) *(.boot_hdr.boot_data) *(.boot_hdr.dcd_data) }
++
++    .slot_header :
++    {
++        __FLASH_BASE = 0x60000000;
++        LONG(ORIGIN(VECTORS) - 0x60000000)   /* ITCM payload source (flash offset) */
++        LONG(SIZEOF(.isr_vector))            /* ITCM payload length */
++        LONG(ORIGIN(VECTORS) - 0x60000000 + SIZEOF(.isr_vector)) /* SDRAM payload source (= itcm_src + itcm_len, as in stock) */
++        LONG(0x20)                           /* SDRAM payload length: 32 B. Must be NON-ZERO: the vendor select_slot() rejects a slot with a zero src/len word. */
++        LONG(0x55555555)
++        LONG(0xAAAAAAAA)
++        LONG(0xA5A5A5A5)
++        LONG(0x30313256)                     /* "V210" version tag, as in the stock sub-header */
++    } > SLOT_HDR
++
++    .isr_vector :
++    {
++        __VECTOR_TABLE = .;
++        __Vectors = .;
++        KEEP(*(.isr_vector))
++        . = ALIGN(4);
++    } > VECTORS
++
++    /* The SDK startup copies the latency-sensitive audio code into ITCM.
++     * Match these objects ahead of the archive and flash catchalls below. */
++    .ram_function : AT(__data_load_end__)
++    {
++        . = ALIGN(32);
++        __ram_function_start__ = .;
++        *audio_binding.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_transport.c.obj(.text .text.* .rodata .rodata.*)
++        *fsl_edma.c.obj(.text .text.* .rodata .rodata.*)
++        *effect_processor.c.obj(.text .text.* .rodata .rodata.*)
++        *cabinet.c.obj(.text .text.* .rodata .rodata.*)
++        *partitioned_convolution.c.obj(.text .text.* .rodata .rodata.*)
++        *room_reverb.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_biquad.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_engine.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_output.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_pcm.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_route.c.obj(.text .text.* .rodata .rodata.*)
++        *audio_transition.c.obj(.text .text.* .rodata .rodata.*)
++        *libm.a:*(.text .text.* .rodata .rodata.*)
++        /* Keep the ROM-call wrappers and their literals available while
++         * FlexSPI is recovering from an erase, program, or cache reset. */
++        *flash_storage.c.obj(.text .text.* .rodata .rodata.*)
++        *fsl_romapi.c.obj(.text .text.* .rodata .rodata.*)
++        *(CodeQuickAccess .ramfunc .ramfunc*)
++        . = ALIGN(32);
++        __ram_function_end__ = .;
++    } > ITCM
++
++    /* Move the remaining reference code off the FlexSPI instruction path.
++     * The boot image still carries its load image in flash. */
++    .sdram_code : AT(__noncache_load__ + SIZEOF(.ncache.init))
++    {
++        __sdram_code_start__ = .;
++        *libgp100_core.a:*(.text .text.* .rodata .rodata.*)
++        . = ALIGN(32);
++        __sdram_code_end__ = .;
++    } > SDRAM
++    __sdram_code_load__ = LOADADDR(.sdram_code);
++
++    .text :
++    {
++        . = ALIGN(4);
++        *(.text .text*)
++        *(.rodata .rodata*)
++        . = ALIGN(4);
++        KEEP(*(.boot_hdr.conf))     /* FCB copy: flash_storage.c hands it to the ROM API */
++        *(.glue_7 .glue_7t)
++        KEEP(*(.init))
++        KEEP(*(.fini))
++        . = ALIGN(4);
++    } > FLASH
++
++    .ARM.extab : { *(.ARM.extab* .gnu.linkonce.armextab.*) } > FLASH
++    .ARM :
++    {
++        __exidx_start = .;
++        *(.ARM.exidx*)
++        __exidx_end = .;
++    } > FLASH
++
++    . = ALIGN(4);
++    __etext = .;
++
++    .data : AT(__etext)
++    {
++        . = ALIGN(4);
++        __data_start__ = .;
++        *(.data .data*)
++        . = ALIGN(4);
++        __data_end__ = .;
++    } > DTCM
++
++    __data_load_end__ = __etext + SIZEOF(.data);
++
++    __noncache_load__ = __data_load_end__ + SIZEOF(.ram_function);
++
++    /* Slot layout: Valeton's bootloader configures FlexRAM as ITCM 320K + DTCM 192K + OCRAM 0 (GPR17 0xAAAFFFFF),
++     * so there is NO RAM at 0x20200000 when this image runs. The DMA-shared non-cacheable sections (SAI and USB
++     * buffers) therefore live in DTCM, which is never cached and is reachable by eDMA and USB (as in NXP's RT1050
++     * SDK linker files). Found on device 2026-11-21: SAI RX read back all zeros. */
++    .ncache.init : AT(__noncache_load__)
++    {
++        . = ALIGN(32);
++        __noncachedata_start__ = .;
++        *(NonCacheable.init)
++        *(.noncache.init .noncache.init*)
++        . = ALIGN(32);
++        __noncachedata_init_end__ = .;
++    } > DTCM
++
++    .ncache (NOLOAD) :
++    {
++        *(NonCacheable)
++        *(.noncache .noncache*)
++        . = ALIGN(32);
++        __noncachedata_end__ = .;
++    } > DTCM
++
++    .bss (NOLOAD) :
++    {
++        . = ALIGN(8);
++        __bss_start__ = .;
++        *(.bss .bss*)
++        *(COMMON)
++        . = ALIGN(8);
++        __bss_end__ = .;
++    } > DTCM
++
++    /* SEMC is established by the boot-ROM DCD before Reset_Handler. These
++     * sections are NOLOAD so the XIP image does not contain 32 MiB of padding;
++     * main clears only .sdram_bss after its destructive-safe probe succeeds. */
++    .sdram_bss (NOLOAD) :
++    {
++        . = ALIGN(32);
++        __sdram_bss_start__ = .;
++        KEEP(*(.sdram_bss .sdram_bss*))
++        . = ALIGN(32);
++        __sdram_bss_end__ = .;
++    } > SDRAM
++
++    .sdram_noinit (NOLOAD) :
++    {
++        . = ALIGN(32);
++        __sdram_noinit_start__ = .;
++        KEEP(*(.sdram_noinit .sdram_noinit*))
++        . = ALIGN(32);
++        __effect_state_start__ = .;
++        . += 0x00300000;
++        __effect_state_end__ = .;
++        __sdram_noinit_end__ = .;
++    } > SDRAM
++
++    .heap (NOLOAD) :
++    {
++        . = ALIGN(8);
++        __HeapBase = .;
++        . += HEAP_SIZE;
++        __HeapLimit = .;
++        end = .;
++    } > DTCM
++
++    .stack (NOLOAD) :
++    {
++        . = ALIGN(8);
++        . += STACK_SIZE;
++        __StackLimit = . - STACK_SIZE;
++        __StackTop = .;
++    } > DTCM
++
++    ASSERT(__StackTop <= ORIGIN(DTCM) + LENGTH(DTCM), "DTCM overflow")
++    ASSERT(__sdram_noinit_end__ <= ORIGIN(SDRAM) + LENGTH(SDRAM), "SDRAM overflow")
++    ASSERT(SIZEOF(.slot_header) == 0x20, "slot header must be 0x20 bytes")
++    ASSERT((ADDR(.isr_vector) & 0x3FF) == 0, "vector table must be 1 KiB aligned for VTOR")
++    ASSERT(SIZEOF(.isr_vector) <= LENGTH(VECTORS), "vector table overflow")
++    ASSERT(LOADADDR(.sdram_code) + SIZEOF(.sdram_code) <= ORIGIN(FLASH) + LENGTH(FLASH),
++           "application load image overlaps factory audio")
++}

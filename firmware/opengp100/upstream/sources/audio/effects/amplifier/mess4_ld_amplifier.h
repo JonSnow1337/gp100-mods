@@ -1,0 +1,39 @@
+#ifndef GP100_MESS4_LD_AMPLIFIER_H
+#define GP100_MESS4_LD_AMPLIFIER_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct gp100_mess4_ld_filter
+{
+    float x[3], y[3];
+} gp100_mess4_ld_filter_t;
+
+typedef struct gp100_mess4_ld_amplifier
+{
+    gp100_mess4_ld_filter_t input_filter;
+    gp100_mess4_ld_filter_t anti_alias_filter;
+    gp100_mess4_ld_filter_t tone_filter;
+    gp100_mess4_ld_filter_t presence_filter;
+    float fir_history[40];
+    float previous_nonlinear_input;
+    float gain, gain_target;
+    float presence, presence_target;
+    float master, master_target;
+    float bass, bass_target;
+    float middle, middle_target;
+    float treble, treble_target;
+    bool configured;
+} gp100_mess4_ld_amplifier_t;
+
+bool gp100_mess4_ld_amplifier_reset(
+    gp100_mess4_ld_amplifier_t *amplifier, uint8_t gain, uint8_t presence,
+    uint8_t master, uint8_t bass, uint8_t middle, uint8_t treble);
+
+bool gp100_mess4_ld_amplifier_process(
+    gp100_mess4_ld_amplifier_t *amplifier, uint8_t gain, uint8_t presence,
+    uint8_t master, uint8_t bass, uint8_t middle, uint8_t treble,
+    float *interleaved_stereo, size_t frame_count, bool enabled);
+
+#endif

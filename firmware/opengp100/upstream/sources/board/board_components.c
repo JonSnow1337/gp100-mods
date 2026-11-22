@@ -1,0 +1,78 @@
+#include "board_components.h"
+
+const gp100_component_t g_gp100_components[] = {
+    {
+        "SGM 5532YS8",
+        "SGMicro SGM5532",
+        "dual low-noise analogue audio op-amp",
+        NULL,
+        kGP100_ComponentNoDigitalInterface,
+        kGP100_DriverNotApplicable,
+        kGP100_ConfidenceHigh,
+    },
+    {
+        "4580",
+        "NJM4580 family",
+        "dual analogue audio op-amp",
+        NULL,
+        kGP100_ComponentNoDigitalInterface,
+        kGP100_DriverNotApplicable,
+        kGP100_ConfidenceMediumHigh,
+    },
+    {
+        "A42S",
+        "3PEAK TP358 or LMV358TP",
+        "dual low-power analogue op-amp; exact family remains ambiguous",
+        NULL,
+        kGP100_ComponentNoDigitalInterface,
+        kGP100_DriverNotApplicable,
+        kGP100_ConfidenceMedium,
+    },
+    {
+        "8156",
+        "Everest ES8156",
+        "stereo audio DAC; likely SAI1 TX and LPI2C1 control",
+        "drivers/es8156.h",
+        kGP100_ComponentI2c,
+        kGP100_DriverAvailable,
+        kGP100_ConfidenceHigh,
+    },
+    {
+        "7243",
+        "Everest ES7243",
+        "stereo audio ADC; likely SAI1 RX and LPI2C1 control",
+        "drivers/es7243.h",
+        kGP100_ComponentI2c,
+        kGP100_DriverAvailable,
+        kGP100_ConfidenceHigh,
+    },
+    {
+        "4556A",
+        "NJM4556A",
+        "high-current dual analogue audio op-amp",
+        NULL,
+        kGP100_ComponentNoDigitalInterface,
+        kGP100_DriverNotApplicable,
+        kGP100_ConfidenceHigh,
+    },
+    {
+        "HC04",
+        "74HC04 family",
+        "hex logic inverter; exact manufacturer/suffix is unreadable",
+        NULL,
+        kGP100_ComponentNoDigitalInterface,
+        kGP100_DriverNotApplicable,
+        kGP100_ConfidenceHigh,
+    },
+    {
+        "not visible",
+        "ST7735-compatible controller",
+        "128x160 RGB565 display over LPSPI1; exact suffix is unproven",
+        "drivers/gp100_display.h",
+        kGP100_ComponentSpiDisplay,
+        kGP100_DriverAvailable,
+        kGP100_ConfidenceHigh,
+    },
+};
+
+const size_t g_gp100_component_count = sizeof(g_gp100_components) / sizeof(g_gp100_components[0]);

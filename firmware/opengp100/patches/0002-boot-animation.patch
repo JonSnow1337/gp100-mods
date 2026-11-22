@@ -1,0 +1,233 @@
+diff -ruN -x __pycache__ a/sources/app/application.c b/sources/app/application.c
+--- a/sources/app/application.c
++++ b/sources/app/application.c
+@@ -2,6 +2,7 @@
+ 
+ #include "board/input/analog_acquisition.h"
+ #include "assets/ui/iq_boot_logo.h"
++#include "ui/boot_animation.h"
+ #include "audio/engine/audio_binding.h"
+ #include "audio/transport/audio_transport.h"
+ #include "board/board.h"
+@@ -842,8 +843,62 @@
+     return result >= GP100_DISPLAY_UNCHANGED;
+ }
+ 
++/* Boot animation stored by the gp100-mods app in a reserved flash area (see ui/boot_animation.h). Returns false when
++ * no valid animation is installed, so the built-in logo is shown instead. */
++_Static_assert(GP100_DISPLAY_WIDTH * GP100_DISPLAY_HEIGHT == 128u * 160u, "boot animation scratch size");
++static uint8_t s_bootAnimScratch[GP100_DISPLAY_WIDTH * GP100_DISPLAY_HEIGHT]
++    __attribute__((section(".sdram_noinit"), aligned(4)));
++
++static bool GP100_ApplicationPlayBootAnimation(void)
++{
++    const uint8_t *const area =
++        (const uint8_t *)(uintptr_t)(0x60000000u + GP100_BOOT_ANIM_FLASH_OFFSET);
++    gp100_boot_anim_t anim;
++    uint16_t palette[256];
++    uint16_t lastFrame = 0xffffu;
++    uint32_t startedAt;
++
++    if (!gp100_boot_anim_parse(area, GP100_BOOT_ANIM_AREA_BYTES, (uint16_t)s_canvas.width,
++                               (uint16_t)s_canvas.height, &anim))
++    {
++        return false;
++    }
++    memset(palette, 0, sizeof(palette));
++    memcpy(palette, anim.palette, (size_t)anim.palette_count * sizeof(uint16_t));
++    startedAt = g_gp100_board_state.milliseconds;
++    for (;;)
++    {
++        const uint16_t frame = gp100_boot_anim_frame_at(
++            &anim, g_gp100_board_state.milliseconds - startedAt);
++        const uint8_t *pixels = NULL;
++
++        if (frame >= anim.frame_count)
++        {
++            break;
++        }
++        if (frame == lastFrame)
++        {
++            __WFI();
++            continue;
++        }
++        if (!gp100_boot_anim_frame_pixels(&anim, frame, s_bootAnimScratch, &pixels) ||
++            !gp100_display_blit_indexed(&s_canvas, 0, 0, anim.width, anim.height, pixels,
++                                        anim.width, 0u, 8u, palette, 256u, false))
++        {
++            return lastFrame != 0xffffu;
++        }
++        (void)gp100_display_flush(&s_framebuffer, &s_displayHooks);
++        lastFrame = frame;
++    }
++    return true;
++}
++
+ static void GP100_ApplicationShowBootLogo(void)
+ {
++    if (GP100_ApplicationPlayBootAnimation())
++    {
++        return;
++    }
+     if (!GP100_ApplicationFadeBootLogo(false))
+     {
+         return;
+diff -ruN -x __pycache__ a/sources/cmake/firmware.cmake b/sources/cmake/firmware.cmake
+--- a/sources/cmake/firmware.cmake
++++ b/sources/cmake/firmware.cmake
+@@ -73,6 +73,7 @@
+ target_link_libraries(gp100_base.elf PRIVATE gp100_core)
+ target_sources(gp100_base.elf PRIVATE
+     app/application.c
++    ui/boot_animation.c
+     assets/ui/iq_boot_logo.c
+     audio/engine/audio_binding.c
+     board/input/control_input.c
+diff -ruN -x __pycache__ a/sources/ui/boot_animation.c b/sources/ui/boot_animation.c
+--- a/sources/ui/boot_animation.c
++++ b/sources/ui/boot_animation.c
+@@ -0,0 +1,87 @@
++#include "boot_animation.h"
++
++#include <string.h>
++
++static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
++static uint32_t rd32(const uint8_t *p)
++{
++    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
++}
++
++bool gp100_boot_anim_parse(const uint8_t *area, size_t max_bytes, uint16_t canvas_width,
++                           uint16_t canvas_height, gp100_boot_anim_t *anim)
++{
++    uint32_t total, sum = 0u, ms = 0u;
++    uint16_t frames, colors;
++    size_t i, table_bytes, data_start;
++
++    if (area == NULL || anim == NULL || max_bytes < GP100_BOOT_ANIM_HEADER_BYTES) { return false; }
++    if (memcmp(area, "GPBA", 4) != 0 || rd16(area + 4) != 1u || rd16(area + 6) != GP100_BOOT_ANIM_HEADER_BYTES) { return false; }
++    frames = rd16(area + 0x0c);
++    colors = rd16(area + 0x0e);
++    total = rd32(area + 0x10);
++    if (frames == 0u || colors == 0u || colors > 256u) { return false; }
++    if (rd16(area + 8) != canvas_width || rd16(area + 10) != canvas_height) { return false; }
++    table_bytes = (size_t)frames * 8u;
++    data_start = GP100_BOOT_ANIM_HEADER_BYTES + (size_t)colors * 2u + table_bytes;
++    if (total < data_start || total > max_bytes) { return false; }
++    for (i = GP100_BOOT_ANIM_HEADER_BYTES; i < total; ++i) { sum += area[i]; }
++    if (sum != rd32(area + 0x14)) { return false; }
++
++    anim->area = area;
++    anim->palette = (const uint16_t *)(const void *)(area + GP100_BOOT_ANIM_HEADER_BYTES);
++    anim->table = area + GP100_BOOT_ANIM_HEADER_BYTES + (size_t)colors * 2u;
++    anim->width = canvas_width;
++    anim->height = canvas_height;
++    anim->frame_count = frames;
++    anim->palette_count = colors;
++    for (i = 0u; i < frames; ++i) {
++        const uint8_t *e = anim->table + i * 8u;
++        const uint32_t off = rd32(e);
++        const uint8_t enc = e[6];
++        if (off < data_start || off >= total || enc > 1u) { return false; }
++        if (enc == 0u && (size_t)off + (size_t)canvas_width * canvas_height > total) { return false; }
++        ms += rd16(e + 4);
++    }
++    if (ms == 0u || ms > GP100_BOOT_ANIM_MAX_MS) { return false; }
++    anim->total_ms = ms;
++    return true;
++}
++
++uint16_t gp100_boot_anim_frame_at(const gp100_boot_anim_t *anim, uint32_t elapsed_ms)
++{
++    uint32_t t = 0u;
++    uint16_t i;
++    for (i = 0u; i < anim->frame_count; ++i) {
++        t += rd16(anim->table + (size_t)i * 8u + 4u);
++        if (elapsed_ms < t) { return i; }
++    }
++    return anim->frame_count;
++}
++
++bool gp100_boot_anim_frame_pixels(const gp100_boot_anim_t *anim, uint16_t index, uint8_t *scratch,
++                                  const uint8_t **out)
++{
++    const uint8_t *e, *src;
++    size_t pixels = (size_t)anim->width * anim->height, produced = 0u;
++    uint32_t off, end;
++
++    if (index >= anim->frame_count || out == NULL) { return false; }
++    e = anim->table + (size_t)index * 8u;
++    off = rd32(e);
++    src = anim->area + off;
++    if (e[6] == 0u) { *out = src; return true; }
++    if (scratch == NULL) { return false; }
++    end = rd32(anim->area + 0x10);
++    while (produced < pixels) {
++        uint8_t count, value;
++        if (off + 2u > end) { return false; }
++        count = src[0]; value = src[1];
++        src += 2; off += 2u;
++        if (count == 0u || produced + count > pixels) { return false; }
++        memset(scratch + produced, value, count);
++        produced += count;
++    }
++    *out = scratch;
++    return true;
++}
+diff -ruN -x __pycache__ a/sources/ui/boot_animation.h b/sources/ui/boot_animation.h
+--- a/sources/ui/boot_animation.h
++++ b/sources/ui/boot_animation.h
+@@ -0,0 +1,53 @@
++#ifndef GP100_BOOT_ANIMATION_H
++#define GP100_BOOT_ANIMATION_H
++
++/*
++ * User boot animation stored in a reserved flash area (written by the gp100-mods app into the update file).
++ * Little-endian layout, offsets from the start of the area:
++ *   0x00  char[4]  magic "GPBA"
++ *   0x04  u16      version (1)
++ *   0x06  u16      header size (0x20)
++ *   0x08  u16      width            (must equal the canvas width, 160)
++ *   0x0A  u16      height           (must equal the canvas height, 128)
++ *   0x0C  u16      frame count      (0 = no animation installed -> built-in logo)
++ *   0x0E  u16      palette count    (1..256)
++ *   0x10  u32      total size       (header + palette + table + frame data)
++ *   0x14  u32      checksum         (sum of every byte from 0x20 to total size, mod 2^32)
++ *   0x18  u32      reserved
++ *   0x1C  u32      reserved
++ *   0x20  u16[palette count]  RGB565 palette (the value written to the canvas)
++ *   ...   frame table, 8 bytes each: u32 data offset (from area start), u16 duration ms, u8 encoding, u8 reserved
++ *   ...   frame data. encoding 0 = raw width*height palette indices; 1 = RLE of (count 1..255, index) byte pairs.
++ * Playback is time-driven (late frames are skipped) and limited to GP100_BOOT_ANIM_MAX_MS.
++ */
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#define GP100_BOOT_ANIM_FLASH_OFFSET 0x001CC000u
++#define GP100_BOOT_ANIM_AREA_BYTES   0x00100000u
++#define GP100_BOOT_ANIM_MAX_MS       10000u
++#define GP100_BOOT_ANIM_HEADER_BYTES 0x20u
++
++typedef struct gp100_boot_anim {
++    const uint8_t *area;
++    const uint16_t *palette;      /* little-endian halfwords; the area is 4-byte aligned in flash */
++    const uint8_t *table;
++    uint16_t width, height, frame_count, palette_count;
++    uint32_t total_ms;
++} gp100_boot_anim_t;
++
++/* Validate an animation area and fill `anim`. Returns false if there is no valid animation. */
++bool gp100_boot_anim_parse(const uint8_t *area, size_t max_bytes, uint16_t canvas_width,
++                           uint16_t canvas_height, gp100_boot_anim_t *anim);
++
++/* Index of the frame to show at `elapsed_ms`, or frame_count when playback has finished. */
++uint16_t gp100_boot_anim_frame_at(const gp100_boot_anim_t *anim, uint32_t elapsed_ms);
++
++/* Decode frame `index` to width*height palette indices. `raw` frames are returned in place (no copy):
++ * *out points either into the area or into `scratch` (must hold width*height bytes). */
++bool gp100_boot_anim_frame_pixels(const gp100_boot_anim_t *anim, uint16_t index, uint8_t *scratch,
++                                  const uint8_t **out);
++
++#endif

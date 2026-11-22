@@ -1,0 +1,91 @@
+{
+  "_comment": "How to restore the Valeton-derived regions of an OpenGP100 section 0 from the user's official V2.1 file. Offsets, lengths, SHA-256 of the finished regions and the few bytes that differ from Valeton's data (OpenGP100's own pattern edits). No Valeton audio or tables are stored here.",
+  "official_sha256": "13914c3c77d5ebe8fcf4a60373d3621b6fb16f82dfe935015cb5af1b03092b73",
+  "fills": [
+    {
+      "name": "drum samples",
+      "dest": "0xb3ddc",
+      "source": "0x16874d",
+      "length": 603620,
+      "sha256": "5b43219333197eb78c0e6b8554ae6889e9cc54e1b1e556899ed336abc5706bb9",
+      "patch": []
+    },
+    {
+      "name": "drum patterns",
+      "dest": "0x147414",
+      "source": "0x1fbd85",
+      "length": 17534,
+      "sha256": "5adab0bbe0b319be6c8aab9c734f5cdd058be24026c98bc644b91ca100a56a4a",
+      "patch": [
+        {
+          "offset": "0x4318",
+          "bytes": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "offset": "0x4344",
+          "bytes": "00"
+        },
+        {
+          "offset": "0x4348",
+          "bytes": "00"
+        },
+        {
+          "offset": "0x434c",
+          "bytes": "00000000000000000000"
+        },
+        {
+          "offset": "0x4357",
+          "bytes": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "offset": "0x4387",
+          "bytes": "000000000000000000000000000000000000000000"
+        },
+        {
+          "offset": "0x439e",
+          "bytes": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "offset": "0x43d9",
+          "bytes": "00000000000000000000000000000000000000"
+        },
+        {
+          "offset": "0x43ee",
+          "bytes": "0000000000000000"
+        },
+        {
+          "offset": "0x4400",
+          "bytes": "0000000000000000"
+        },
+        {
+          "offset": "0x4410",
+          "bytes": "0000000000000000"
+        },
+        {
+          "offset": "0x4420",
+          "bytes": "0000"
+        },
+        {
+          "offset": "0x4430",
+          "bytes": "00000000"
+        },
+        {
+          "offset": "0x4440",
+          "bytes": "000000000000"
+        },
+        {
+          "offset": "0x4450",
+          "bytes": "000000000000"
+        },
+        {
+          "offset": "0x4460",
+          "bytes": "000000000000"
+        },
+        {
+          "offset": "0x4470",
+          "bytes": "00000000"
+        }
+      ]
+    }
+  ]
+}

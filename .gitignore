@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.egg-info/
+build/
+build-*/
+dist/
+*.spec
+.pytest_cache/
+# firmware files are never committed: official Valeton updates, OpenGP100 builds, flash dumps
+*.bin
+*.frmw
+*.parts
+*.pcapng
+
+# The bundled OpenGP100 build (blanked of Valeton data, see docs/legal.md) IS committed.
+!src/gp100mods/data/firmware/*.sec0

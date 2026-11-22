@@ -1,0 +1,78 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: Linux }
+          - { os: windows-latest, name: Windows }
+          - { os: macos-latest, name: macOS }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Qt system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      - run: pip install -e ".[app,dev]"
+      - name: Tests
+        run: pytest -q
+        env: { QT_QPA_PLATFORM: offscreen }
+      - name: Build standalone app
+        shell: bash
+        run: |
+          sep=":"; [ "$RUNNER_OS" = "Windows" ] && sep=";"
+          pyinstaller --noconfirm --windowed --name GP100FirmwareBuilder --collect-all imageio_ffmpeg \
+            --add-data "src/gp100mods/data${sep}gp100mods/data" --paths src packaging/entry.py
+      - name: Smoke test the packaged app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then exe=dist/GP100FirmwareBuilder/GP100FirmwareBuilder.exe
+          elif [ "$RUNNER_OS" = "macOS" ]; then exe=dist/GP100FirmwareBuilder.app/Contents/MacOS/GP100FirmwareBuilder
+          else exe=dist/GP100FirmwareBuilder/GP100FirmwareBuilder; fi
+          QT_QPA_PLATFORM=offscreen "$exe" --selftest
+      - name: Zip
+        shell: bash
+        run: |
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a ../GP100FirmwareBuilder-${{ matrix.name }}.zip GP100FirmwareBuilder
+          elif [ "$RUNNER_OS" = "macOS" ]; then ditto -c -k --keepParent GP100FirmwareBuilder.app ../GP100FirmwareBuilder-${{ matrix.name }}.zip
+          else zip -r ../GP100FirmwareBuilder-${{ matrix.name }}.zip GP100FirmwareBuilder; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.name }}
+          path: GP100FirmwareBuilder-${{ matrix.name }}.zip
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: "zip-*", merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: "*.zip"
+          generate_release_notes: true
+          body: |
+            Standalone GP-100 Firmware Builder. Unzip and run. You need your own copy of Valeton's official GP-100 Firmware V2.1.
+
+            **Tested with:** official firmware V2.1 as the base and GP-100 app 1.5.0, on Windows and WSL (Linux).
+            **Not tested:** other GP-100 app versions (e.g. 1.5.1), macOS, native Linux.
+
+            **Disclaimer:** unofficial, not affiliated with Valeton, provided as is without warranty. Flashing can leave
+            the pedal unusable, and every firmware update erases the presets on it.
+            **OpenGP100 mode:** it replaces Valeton's firmware, and the official GP-100 app stops working with the pedal. It will
+            only show "Device Connected" and you can't edit your effect patches. The app works again only when the pedal is
+            in recovery mode, and then only to install a firmware update (for example to go back to Valeton's firmware).
+
+            **Original firmware + mods mode:** the official GP-100 app keeps working. Known bug: it is buggy if you swap out
+            the wah and the chorus.
+
+            **Recommendations:** back up your presets first, don't unplug the pedal or USB cable during the update, and read
+            [docs/recovery.md](https://github.com/${{ github.repository }}/blob/main/docs/recovery.md) before flashing.

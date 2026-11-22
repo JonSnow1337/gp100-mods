@@ -1,0 +1,159 @@
+diff -ruN -x __pycache__ a/sources/app/feature_flags.h b/sources/app/feature_flags.h
+--- a/sources/app/feature_flags.h
++++ b/sources/app/feature_flags.h
+@@ -21,6 +21,8 @@
+ 
+ #define GP100_FEATURE_STARTER_PRESET     (1u << 0)   /* offer the built-in "Starter" preset in slot P01 while it is empty */
+ 
++#define GP100_FEATURE_FINE_MASTER_VOLUME (1u << 1)   /* finer steps at the quiet end of MASTER (see audio_output.h) */
++
+ /* Parse a block. Returns the flags, or 0 if the block is missing or invalid. */
+ uint32_t gp100_feature_flags_parse(const uint8_t *block, size_t bytes);
+ 
+diff -ruN -x __pycache__ a/sources/audio/engine/audio_binding.c b/sources/audio/engine/audio_binding.c
+--- a/sources/audio/engine/audio_binding.c
++++ b/sources/audio/engine/audio_binding.c
+@@ -1,5 +1,6 @@
+ #include "audio_binding.h"
+ 
++#include "app/feature_flags.h"
+ #include "audio/transport/audio_transport.h"
+ #include "board/board.h"
+ #include "board/peripherals.h"
+@@ -49,6 +50,9 @@
+ static gp100_effect_chain_ops_t s_effectOps;
+ static gp100_global_equalizer_t s_globalEqualizer;
+ static gp100_audio_master_level_t s_masterLevel;
++static volatile char s_markerTouch;
++static gp100_audio_master_fine_t s_masterFine;
++static bool s_masterFineEnabled;     /* feature flag, read once at start-up (the flag block lives in flash) */
+ static gp100_audio_input_level_t s_inputLevel;
+ static gp100_audio_volume_pedal_t s_volumePedalLevel;
+ static gp100_volume_pedal_position_t s_volumePedalPosition;
+@@ -573,9 +577,13 @@
+         ++s_status.boundary_filter_errors;
+     }
+     masterApplied = result != GP100_AUDIO_BLOCK_INVALID &&
+-        gp100_audio_master_level_apply(
+-            &s_masterLevel, s_interleaved,
+-            GP100_AUDIO_BLOCK_FRAMES);
++        (s_masterFineEnabled
++            ? gp100_audio_master_fine_apply(
++                &s_masterFine, s_interleaved,
++                GP100_AUDIO_BLOCK_FRAMES)
++            : gp100_audio_master_level_apply(
++                &s_masterLevel, s_interleaved,
++                GP100_AUDIO_BLOCK_FRAMES));
+     if (result == GP100_AUDIO_BLOCK_INVALID ||
+         !masterApplied ||
+         !gp100_audio_float_to_pcm24(
+@@ -703,6 +711,7 @@
+     s_globalEqualizer.enabled = equalizerConfiguration.enabled;
+     s_globalEqualizer.configured = true;
+     s_masterLevel.target_percent = (uint8_t)masterVolume;
++    s_masterFine.target_percent = (uint8_t)masterVolume;
+     s_inputLevel.target_db = inputLevel;
+     __DMB();
+     EnableGlobalIRQ(interruptMask);
+@@ -855,6 +864,9 @@
+     gp100_audio_boundaries_reset(&s_audioBoundaries);
+     gp100_global_equalizer_reset(&s_globalEqualizer);
+     gp100_audio_master_level_reset(&s_masterLevel);
++    gp100_audio_master_fine_reset(&s_masterFine);
++    s_masterFineEnabled = gp100_feature_enabled(GP100_FEATURE_FINE_MASTER_VOLUME);
++    s_markerTouch = gp100_fine_master_marker[0];      /* referenced, so --gc-sections keeps the marker string */
+     gp100_audio_input_level_reset(&s_inputLevel);
+     gp100_audio_volume_pedal_reset(&s_volumePedalLevel);
+     s_volumePedalPosition = GP100_VOLUME_PEDAL_POST;
+diff -ruN -x __pycache__ a/sources/audio/engine/audio_output.c b/sources/audio/engine/audio_output.c
+--- a/sources/audio/engine/audio_output.c
++++ b/sources/audio/engine/audio_output.c
+@@ -161,6 +161,58 @@
+     return apply_integer_gain(level, interleaved_stereo, frame_count, 256.0f);
+ }
+ 
++const char gp100_fine_master_marker[] = "GP100-FINE-MASTER-1";
++
++#define GP100_AUDIO_MASTER_FINE_STEP 197u      /* same full-ramp time as the stock +-1 of 255 per block */
++
++uint32_t gp100_audio_master_fine_gain(uint8_t percent)
++{
++    const uint32_t p = percent > GP100_AUDIO_OUTPUT_MAX_PERCENT ? GP100_AUDIO_OUTPUT_MAX_PERCENT : percent;
++    return (p * p * (p + 60u)) >> 5;
++}
++
++void gp100_audio_master_fine_reset(gp100_audio_master_fine_t *level)
++{
++    if (level != NULL) {
++        level->current_gain = 0u;
++        level->target_percent = GP100_AUDIO_OUTPUT_MAX_PERCENT;
++    }
++}
++
++bool gp100_audio_master_fine_apply(
++    gp100_audio_master_fine_t *level,
++    float *interleaved_stereo,
++    size_t frame_count)
++{
++    uint32_t target;
++    uint32_t current;
++    float scale;
++    size_t sample;
++
++    if (level == NULL ||
++        (frame_count != 0u && interleaved_stereo == NULL) ||
++        frame_count > SIZE_MAX / 2u ||
++        level->target_percent > GP100_AUDIO_OUTPUT_MAX_PERCENT) {
++        return false;
++    }
++    target = gp100_audio_master_fine_gain(level->target_percent);
++    current = level->current_gain;
++    if (current + GP100_AUDIO_MASTER_FINE_STEP <= target) {
++        current += GP100_AUDIO_MASTER_FINE_STEP;
++    } else if (current >= target + GP100_AUDIO_MASTER_FINE_STEP) {
++        current -= GP100_AUDIO_MASTER_FINE_STEP;
++    } else {
++        current = target;
++    }
++    level->current_gain = (uint16_t)current;
++    /* 255/256 = the stock level at MASTER 100, so the loudest setting is unchanged. */
++    scale = ((float)current / (float)GP100_AUDIO_MASTER_FINE_MAX) * (255.0f / 256.0f);
++    for (sample = 0u; sample < frame_count * 2u; ++sample) {
++        interleaved_stereo[sample] *= scale;
++    }
++    return true;
++}
++
+ void gp100_audio_input_level_reset(
+     gp100_audio_input_level_t *level)
+ {
+diff -ruN -x __pycache__ a/sources/audio/engine/audio_output.h b/sources/audio/engine/audio_output.h
+--- a/sources/audio/engine/audio_output.h
++++ b/sources/audio/engine/audio_output.h
+@@ -62,6 +62,26 @@
+     float *interleaved_stereo,
+     size_t frame_count);
+ 
++/* Optional finer MASTER curve (feature flag). The stock curve is linear in amplitude (gain = 255 * percent / 100), so the
++ * knob is very coarse at the bottom: percent 1/2/3 are already -48/-42/-38 dB. Here gain = p*p*(p+60) / 32, 0..50000, i.e.
++ * percent 20 is about as loud as stock 2 (-34 dB), 40 as stock 10 (-20 dB); percent 100 is unchanged (full scale). */
++#define GP100_AUDIO_MASTER_FINE_MAX 50000u
++
++typedef struct gp100_audio_master_fine {
++    uint16_t current_gain;      /* 0..GP100_AUDIO_MASTER_FINE_MAX, moves by one ramp step per block */
++    uint8_t target_percent;     /* MASTER 0..100 */
++} gp100_audio_master_fine_t;
++
++/* Capability marker: the gp100-mods app looks for this text in a bundled firmware to know it has the fine-MASTER switch. */
++extern const char gp100_fine_master_marker[];
++
++uint32_t gp100_audio_master_fine_gain(uint8_t percent);
++void gp100_audio_master_fine_reset(gp100_audio_master_fine_t *level);
++bool gp100_audio_master_fine_apply(
++    gp100_audio_master_fine_t *level,
++    float *interleaved_stereo,
++    size_t frame_count);
++
+ void gp100_audio_input_level_reset(
+     gp100_audio_input_level_t *level);
+ 

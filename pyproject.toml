@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp100-mods"
+version = "0.2.1"
+description = "Tools and a desktop app for customising OpenGP100 firmware on the Valeton GP-100 (boot animations, ...)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["Pillow>=10", "imageio-ffmpeg>=0.5", "numpy>=1.24"]
+
+[project.optional-dependencies]
+app = ["PySide6-Essentials>=6.6"]
+dev = ["pytest", "unicorn", "pyelftools", "pyinstaller"]
+
+[project.scripts]
+gp100-mods = "gp100mods.cli:main"
+
+[project.gui-scripts]
+gp100-boot-animation = "gp100mods.app.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
