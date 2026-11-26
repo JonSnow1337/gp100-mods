@@ -1,12 +1,12 @@
 {
   "firmwares": [
     {
-      "id": "opengp100-0.7",
+      "id": "opengp100-0.8",
       "label": "OpenGP100",
-      "version": "0.7",
-      "file": "opengp100-0.7.sec0",
-      "sha256": "271934bc11552752c451962bc5e39238af0c1354c8f0959aa62207610b8552d5",
-      "notes": "Optional finer MASTER volume steps",
+      "version": "0.8",
+      "file": "opengp100-0.8.sec0",
+      "sha256": "0ae1ff1b714425d0f47b4b0c1661cd4edc7b221f7b4cb47818f238393609fe02",
+      "notes": "OpenGP100 c696365: USB audio, new effect catalog; optional finer MASTER volume steps",
       "features": [],
       "fills": [
         {
