@@ -1,0 +1,72 @@
+#include "audio/effects/modulation/flanger.h"
+
+#include <math.h>
+#include <stdio.h>
+
+static int close_enough(float left, float right, float tolerance)
+{
+    return fabsf(left - right) <= tolerance;
+}
+
+int main(void)
+{
+    gp100_flanger_t flanger;
+    float audio[2] = {0.25f, -0.5f};
+    size_t frame;
+    int stereo_observed = 0;
+
+    if (!gp100_flanger_reset(&flanger, 50u, 0.5f, 50u, 50u,
+                                  false) ||
+        !close_enough(flanger.current_depth, 0.5f, 0.000001f) ||
+        !close_enough(flanger.current_feedback, 0.5f, 0.000001f) ||
+        !close_enough(flanger.current_bias, 0.5f, 0.000001f) ||
+        flanger.current_rate_step != 0.0f ||
+        !gp100_flanger_process(&flanger, 99u, 10.0f, 99u, 99u,
+                                    false, 500u, audio, 1u, true) ||
+        !(flanger.current_depth > 0.5f) ||
+        !(flanger.current_feedback > 0.5f) ||
+        !(flanger.current_bias > 0.5f) ||
+        !(flanger.current_rate_step > 0.0f) ||
+        !isfinite(audio[0]) || !isfinite(audio[1])) {
+        fprintf(stderr, "Flanger control/state test failed\n");
+        return 1;
+    }
+
+    for (frame = 0u; frame < 8192u; ++frame) {
+        audio[0] = sinf((float)frame * 0.017f) * 0.2f;
+        audio[1] = -0.75f;
+        if (!gp100_flanger_process(&flanger, 80u, 3.0f, 40u, 60u,
+                                        false, 500u, audio, 1u, true) ||
+            !isfinite(audio[0]) || !isfinite(audio[1])) {
+            fprintf(stderr, "Flanger stability test failed\n");
+            return 2;
+        }
+        if (fabsf(audio[0] - audio[1]) > 0.000001f) {
+            stereo_observed = 1;
+        }
+    }
+    if (!stereo_observed) {
+        fprintf(stderr, "Flanger stereo-motion test failed\n");
+        return 3;
+    }
+
+    audio[0] = 0.125f;
+    audio[1] = -0.25f;
+    if (!gp100_flanger_process(&flanger, 50u, 4.0f, 50u, 50u,
+                                    true, 500u, audio, 1u, false) ||
+        audio[0] != 0.125f || audio[1] != -0.25f ||
+        gp100_flanger_reset(NULL, 50u, 0.5f, 50u, 50u, false) ||
+        gp100_flanger_reset(&flanger, 100u, 0.5f, 50u, 50u, false) ||
+        gp100_flanger_process(&flanger, 50u, 11.0f, 50u, 50u,
+                                   false, 500u, audio, 1u, true) ||
+        gp100_flanger_process(&flanger, 50u, 10.5f, 50u, 50u,
+                                   true, 500u, audio, 1u, true) ||
+        gp100_flanger_process(&flanger, 50u, 4.0f, 50u, 50u,
+                                   true, 0u, audio, 1u, true) ||
+        gp100_flanger_process(&flanger, 50u, 0.5f, 50u, 50u,
+                                   false, 500u, NULL, 1u, true)) {
+        fprintf(stderr, "Flanger bypass/validation test failed\n");
+        return 4;
+    }
+    return 0;
+}

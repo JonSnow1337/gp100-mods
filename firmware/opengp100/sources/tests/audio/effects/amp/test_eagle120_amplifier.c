@@ -1,0 +1,3 @@
+#include "audio/effects/amp/eagle120_amplifier.h"
+#include <math.h>
+int main(void){gp100_eagle120_amplifier_t a;float x[2]={.000001f,-.5f},g;size_t i;if(!gp100_eagle120_amplifier_reset(&a,50,50,50,50,50,50))return 1;g=a.gain;if(!gp100_eagle120_amplifier_process(&a,99,99,99,99,99,99,x,1,false)||x[0]!=.000001f||x[1]!=-.5f||a.gain<=g)return 2;for(i=0;i<4096;i++){x[0]=sinf(6.2831855f*i/83.f)*.000001f;if(!gp100_eagle120_amplifier_process(&a,65,55,60,50,55,60,x,1,true)||!isfinite(x[0])||x[0]!=x[1])return 3;}if(gp100_eagle120_amplifier_reset(NULL,0,0,0,0,0,0)||gp100_eagle120_amplifier_reset(&a,100,0,0,0,0,0)||gp100_eagle120_amplifier_process(&a,0,0,0,0,0,100,NULL,0,true))return 4;return 0;}
