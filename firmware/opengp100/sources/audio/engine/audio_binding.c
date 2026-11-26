@@ -1,5 +1,6 @@
 #include "audio_binding.h"
 
+#include "app/feature_flags.h"
 #include "audio/transport/audio_transport.h"
 #include "board/board.h"
 #include "board/peripherals.h"
@@ -51,6 +52,9 @@ static bool s_presetRecallPending;
 static gp100_effect_chain_ops_t s_effectOps;
 static gp100_global_equalizer_t s_globalEqualizer;
 static gp100_audio_master_level_t s_masterLevel;
+static volatile char s_markerTouch;
+static gp100_audio_master_fine_t s_masterFine;
+static bool s_masterFineEnabled;     /* feature flag, read once at start-up (the flag block lives in flash) */
 static gp100_output_limiter_t s_outputLimiter;
 static gp100_output_limiter_config_t s_outputLimiterConfig;
 static gp100_audio_input_level_t s_inputLevel;
@@ -579,9 +583,13 @@ static void GP100_AudioBindingProcess(
         ++s_status.boundary_filter_errors;
     }
     masterApplied = result != GP100_AUDIO_BLOCK_INVALID &&
-        gp100_audio_master_level_apply(
-            &s_masterLevel, s_interleaved,
-            GP100_AUDIO_BLOCK_FRAMES);
+        (s_masterFineEnabled
+            ? gp100_audio_master_fine_apply(
+                &s_masterFine, s_interleaved,
+                GP100_AUDIO_BLOCK_FRAMES)
+            : gp100_audio_master_level_apply(
+                &s_masterLevel, s_interleaved,
+                GP100_AUDIO_BLOCK_FRAMES));
     if (masterApplied)
     {
         gp100_output_limiter_process(&s_outputLimiter, &s_outputLimiterConfig,
@@ -730,6 +738,7 @@ static bool GP100_AudioBindingSyncRuntime(
     s_globalEqualizer.configured = true;
     s_outputLimiterConfig = limiterConfiguration;
     s_masterLevel.target_percent = (uint8_t)masterVolume;
+    s_masterFine.target_percent = (uint8_t)masterVolume;
     s_inputLevel.target_db = inputLevel;
     __DMB();
     EnableGlobalIRQ(interruptMask);
@@ -882,6 +891,9 @@ bool GP100_AudioBindingInitialize(
     gp100_audio_boundaries_reset(&s_audioBoundaries);
     gp100_global_equalizer_reset(&s_globalEqualizer);
     gp100_audio_master_level_reset(&s_masterLevel);
+    gp100_audio_master_fine_reset(&s_masterFine);
+    s_masterFineEnabled = gp100_feature_enabled(GP100_FEATURE_FINE_MASTER_VOLUME);
+    s_markerTouch = gp100_fine_master_marker[0];      /* referenced, so --gc-sections keeps the marker string */
     memset(&s_outputLimiter, 0, sizeof(s_outputLimiter));
     gp100_audio_input_level_reset(&s_inputLevel);
     gp100_audio_volume_pedal_reset(&s_volumePedalLevel);

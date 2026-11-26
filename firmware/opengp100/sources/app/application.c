@@ -2,6 +2,10 @@
 
 #include "board/input/analog_acquisition.h"
 #include "assets/ui/iq_boot_logo.h"
+#include "ui/boot_animation.h"
+#include "app/feature_flags.h"
+#include "app/starter_preset.h"
+#include "app/factory_presets.h"
 #include "audio/engine/audio_binding.h"
 #include "audio/transport/audio_transport.h"
 #include "board/board.h"
@@ -155,10 +159,17 @@ static bool GP100_LoadPreset(void *context,
     }
     if (!GP100_LoadStoredPreset(context, logicalPreset, preset))
     {
-        if (!gp100_make_development_preset(preset, "Empty")) {
-            return false;
+        /* Nothing saved here: use the factory preset the update file carries for this slot (see factory_presets.h), else for
+         * slot P01 the legacy built-in "Starter" (flag in the update file), else an empty preset. */
+        if (!gp100_factory_preset_load(logicalPreset, preset) &&
+            !(logicalPreset == 0u && gp100_feature_enabled(GP100_FEATURE_STARTER_PRESET) &&
+              gp100_make_starter_preset(preset)))
+        {
+            if (!gp100_make_development_preset(preset, "Empty")) {
+                return false;
+            }
+            gp100_patch_init(preset);
         }
-        gp100_patch_init(preset);
         source = kGP100_ApplicationSourceDevelopmentFallback;
     }
     s_status.preset_source = source;
@@ -844,8 +855,62 @@ static bool GP100_ApplicationFadeBootLogo(bool fadeOut)
     return result >= GP100_DISPLAY_UNCHANGED;
 }
 
+/* Boot animation stored by the gp100-mods app in a reserved flash area (see ui/boot_animation.h). Returns false when
+ * no valid animation is installed, so the built-in logo is shown instead. */
+_Static_assert(GP100_DISPLAY_WIDTH * GP100_DISPLAY_HEIGHT == 128u * 160u, "boot animation scratch size");
+static uint8_t s_bootAnimScratch[GP100_DISPLAY_WIDTH * GP100_DISPLAY_HEIGHT]
+    __attribute__((section(".sdram_noinit"), aligned(4)));
+
+static bool GP100_ApplicationPlayBootAnimation(void)
+{
+    const uint8_t *const area =
+        (const uint8_t *)(uintptr_t)(0x60000000u + GP100_BOOT_ANIM_FLASH_OFFSET);
+    gp100_boot_anim_t anim;
+    uint16_t palette[256];
+    uint16_t lastFrame = 0xffffu;
+    uint32_t startedAt;
+
+    if (!gp100_boot_anim_parse(area, GP100_BOOT_ANIM_AREA_BYTES, (uint16_t)s_canvas.width,
+                               (uint16_t)s_canvas.height, &anim))
+    {
+        return false;
+    }
+    memset(palette, 0, sizeof(palette));
+    memcpy(palette, anim.palette, (size_t)anim.palette_count * sizeof(uint16_t));
+    startedAt = g_gp100_board_state.milliseconds;
+    for (;;)
+    {
+        const uint16_t frame = gp100_boot_anim_frame_at(
+            &anim, g_gp100_board_state.milliseconds - startedAt);
+        const uint8_t *pixels = NULL;
+
+        if (frame >= anim.frame_count)
+        {
+            break;
+        }
+        if (frame == lastFrame)
+        {
+            __WFI();
+            continue;
+        }
+        if (!gp100_boot_anim_frame_pixels(&anim, frame, s_bootAnimScratch, &pixels) ||
+            !gp100_display_blit_indexed(&s_canvas, 0, 0, anim.width, anim.height, pixels,
+                                        anim.width, 0u, 8u, palette, 256u, false))
+        {
+            return lastFrame != 0xffffu;
+        }
+        (void)gp100_display_flush(&s_framebuffer, &s_displayHooks);
+        lastFrame = frame;
+    }
+    return true;
+}
+
 static void GP100_ApplicationShowBootLogo(void)
 {
+    if (GP100_ApplicationPlayBootAnimation())
+    {
+        return;
+    }
     if (!GP100_ApplicationFadeBootLogo(false))
     {
         return;

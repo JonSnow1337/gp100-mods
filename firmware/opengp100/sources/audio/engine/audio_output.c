@@ -161,6 +161,58 @@ bool gp100_audio_master_level_apply(
     return apply_integer_gain(level, interleaved_stereo, frame_count, 256.0f);
 }
 
+const char gp100_fine_master_marker[] = "GP100-FINE-MASTER-1";
+
+#define GP100_AUDIO_MASTER_FINE_STEP 197u      /* same full-ramp time as the stock +-1 of 255 per block */
+
+uint32_t gp100_audio_master_fine_gain(uint8_t percent)
+{
+    const uint32_t p = percent > GP100_AUDIO_OUTPUT_MAX_PERCENT ? GP100_AUDIO_OUTPUT_MAX_PERCENT : percent;
+    return (p * p * (p + 60u)) >> 5;
+}
+
+void gp100_audio_master_fine_reset(gp100_audio_master_fine_t *level)
+{
+    if (level != NULL) {
+        level->current_gain = 0u;
+        level->target_percent = GP100_AUDIO_OUTPUT_MAX_PERCENT;
+    }
+}
+
+bool gp100_audio_master_fine_apply(
+    gp100_audio_master_fine_t *level,
+    float *interleaved_stereo,
+    size_t frame_count)
+{
+    uint32_t target;
+    uint32_t current;
+    float scale;
+    size_t sample;
+
+    if (level == NULL ||
+        (frame_count != 0u && interleaved_stereo == NULL) ||
+        frame_count > SIZE_MAX / 2u ||
+        level->target_percent > GP100_AUDIO_OUTPUT_MAX_PERCENT) {
+        return false;
+    }
+    target = gp100_audio_master_fine_gain(level->target_percent);
+    current = level->current_gain;
+    if (current + GP100_AUDIO_MASTER_FINE_STEP <= target) {
+        current += GP100_AUDIO_MASTER_FINE_STEP;
+    } else if (current >= target + GP100_AUDIO_MASTER_FINE_STEP) {
+        current -= GP100_AUDIO_MASTER_FINE_STEP;
+    } else {
+        current = target;
+    }
+    level->current_gain = (uint16_t)current;
+    /* 255/256 = the stock level at MASTER 100, so the loudest setting is unchanged. */
+    scale = ((float)current / (float)GP100_AUDIO_MASTER_FINE_MAX) * (255.0f / 256.0f);
+    for (sample = 0u; sample < frame_count * 2u; ++sample) {
+        interleaved_stereo[sample] *= scale;
+    }
+    return true;
+}
+
 void gp100_audio_input_level_reset(
     gp100_audio_input_level_t *level)
 {

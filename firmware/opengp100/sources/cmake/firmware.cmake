@@ -85,6 +85,10 @@ function(gp100_add_firmware name boot_dcd)
     target_link_libraries(${firmware} PRIVATE gp100_core)
     target_sources(${firmware} PRIVATE
         app/application.c
+        ui/boot_animation.c
+        app/feature_flags.c
+        app/starter_preset.c
+        app/factory_presets.c
         assets/ui/iq_boot_logo.c
         audio/engine/audio_binding.c
         board/input/control_input.c
