@@ -16,17 +16,15 @@ bundled OpenGP100 section 0 (bundle.py) + option switches
 * `update_file.inspect` (used by the maintainer tool and as a post-generation self-check) accepts a file only if it passes the FRMW checks (`frmw.py`) *and* contains the `GPBA` area header,
   which proves the firmware was built with the animation player.
 * The original file is never overwritten.
-* The app is PySide6 (Qt). It was chosen because the whole code base is Python and Qt packages cleanly with PyInstaller for
-  Windows, macOS and Linux.
+* The app is PySide6 (Qt), packaged with PyInstaller for Windows, macOS and Linux.
 
 ## Two modes
 
 * **OpenGP100** builds `bundled section 0 + the user's Valeton parts` (see above).
 * **Original firmware + mods** applies `gp100mods.stock.*` patches to the user's verified copy of Valeton's V2.1 file. Each patch
-  (`wah_in_mod`, `master_volume`, `about_text`, `boot_gif`) checks that every byte it touches is exactly what was analysed and
-  raises ValueError otherwise, so it can only ever modify that one firmware. Order: wah, boot GIF, About text, volume. With no
-  box ticked the output equals the official file. The patches reproduce the builds originally flashed and confirmed on a real
-  pedal byte for byte (`tests/test_stock.py`, run with `GP100_V21_FILE` set).
+  (`wah_in_mod`, `master_volume`, `about_text`, `boot_gif`) checks that every byte it touches is what it expects and raises
+  ValueError otherwise, so it only ever modifies that one firmware. Order: wah, boot GIF, About text, volume. With no box ticked the
+  output equals the official file. Tests: `tests/test_stock.py` (run with `GP100_V21_FILE` set).
 
 ## UI
 

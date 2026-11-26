@@ -14,14 +14,15 @@ app can install it and the bootloader (and the footswitch + PARA recovery mode) 
 * The app's build step (`gp100mods.opengp100.finish`) adds two reserved areas of that erased space: the feature-flag block
   (`0x1CBF00`) and the boot-animation / factory-preset area (`0x1CC000`).
 
-## Boot-path pitfalls (found on a real pedal with our first, own slot layout)
+## Boot-path pitfalls
 
-1. **Zero SDRAM length** - the bootloader silently kept booting the updater (`select_slot` rejects a slot with any zero src/len word).
-2. **Vector table alignment** - VTOR ignores bits 6:0 and the M7 needs the table aligned to its size rounded up to a power of two.
-3. **No OCRAM** - with Valeton's FlexRAM layout, memory at `0x20200000` does not exist: DMA writes vanished and nothing reached the DAC.
+A slot the bootloader rejects, or a wrong memory layout, fails silently:
 
-His stock-slot target solves all three by construction (Valeton's own header, a 4 KiB aligned vector table, the FlexRAM switch).
-`gp100mods.frmw` and `opengp100.finish` still check what can be checked offline (header words, Thumb entry, reserved areas free), and
+1. **Zero SDRAM length:** `select_slot` rejects a slot with any zero src/len word and boots the updater instead.
+2. **Vector table alignment:** VTOR ignores bits 6:0 and the M7 needs the table aligned to its size rounded up to a power of two.
+3. **No OCRAM:** with Valeton's FlexRAM layout, memory at `0x20200000` does not exist, so DMA buffers placed there read as zeros.
+
+The stock-slot target avoids all three. `gp100mods.frmw` and `opengp100.finish` check what can be checked offline, and
 `python -m gp100mods bootloader-sim` replays the bootloader's slot selection on an update file against a flash dump.
 
 ## Boot animation

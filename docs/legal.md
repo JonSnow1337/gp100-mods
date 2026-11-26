@@ -1,6 +1,5 @@
 # Legal / redistribution
 
-
 **Valeton data is not shipped.** Everything in a generated file that is Valeton's comes from the user's own official V2.1 file
 (SHA-256 verified, re-checked on every build):
 
@@ -13,12 +12,11 @@
 The drum sample block is only restored when the user unticks **New drum sounds**; with it on (the default), the
 file contains our own samples instead (see below). The pattern table is always Valeton's.
 
-The bundled firmware (committed to this repository) stores the last two blank; `update_file.compose` restores them and refuses unless the result matches a
-hard-coded hash. The repository, bundle and packaged app were byte-scanned for these blocks (none found). Valeton's bootloader
-and updater are never shipped. (An earlier version of this file wrongly said section 0 held no Valeton data.)
+The bundled firmware (committed to this repository) stores the last two blank; `update_file.compose` restores them and refuses unless
+the result matches a hard-coded hash. Valeton's bootloader and updater are never shipped.
 
-**OpenGP100** is the work of Aleksey Khristolyubov (Reddit: Natural-Mechanic7484) (thank you), included in `firmware/opengp100/sources/` with his written permission (see
-`UPSTREAM.md` there; his cabinet/drum WAVs and pattern table are left out).
+**OpenGP100** is the work of Aleksey Khristolyubov (Reddit: Natural-Mechanic7484) (thank you), included in `firmware/opengp100/sources/` with his written permission
+(see `firmware/opengp100/UPSTREAM.md`; his cabinet/drum WAVs and pattern table are left out).
 
 **Committed:** the current compiled OpenGP100 build, `src/gp100mods/data/firmware/*.sec0` (only one version is kept), so the
 app works out of the box. Its two Valeton regions are blank; `tests/test_committed_bundle.py` fails if they are not.
