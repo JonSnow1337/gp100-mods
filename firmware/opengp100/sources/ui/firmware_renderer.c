@@ -69,10 +69,12 @@ static bool render_play(
 {
     gp100_play_screen_snapshot_t snapshot;
 
-    return gp100_play_screen_snapshot_from_records(
+    const bool built = gp100_play_screen_snapshot_from_records(
                &snapshot, runtime->ui.logical_preset,
                &runtime->preset, &runtime->settings,
-               runtime->preset_modified, runtime->ui.drum_enabled) &&
+               runtime->preset_modified, runtime->ui.drum_enabled);
+    snapshot.unsaved_warning = runtime->ui.unsaved_warning && runtime->preset_modified;
+    return built &&
            gp100_play_screen_render(
                canvas, &snapshot, &renderer->play);
 }

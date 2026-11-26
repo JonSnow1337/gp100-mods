@@ -39,6 +39,8 @@ typedef struct gp100_ui_runtime {
     bool drum_release_guard;
     bool tap_tempo_enabled;
     bool play_footswitch_release_pending;
+    bool unsaved_warning;          /* Play: PARA was turned with unsaved edits; turn again to go on */
+    uint32_t unsaved_warning_ms;   /* clock_ms when the warning appeared */
     uint32_t tap_count;
     uint32_t last_tap_tick;
     bool looper_pair_release_guard;

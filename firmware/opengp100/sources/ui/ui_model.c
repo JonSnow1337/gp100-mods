@@ -295,3 +295,23 @@ const char *gp100_hardware_test_key_label(
     }
     return "NULL";
 }
+
+bool gp100_ui_control_is_user_input(const gp100_ui_control_event_t *decoded)
+{
+    return decoded != NULL &&
+           (decoded->kind == GP100_UI_CONTROL_ENCODER ||
+            decoded->kind == GP100_UI_CONTROL_BUTTON ||
+            decoded->kind == GP100_UI_CONTROL_FOOTSWITCH_PAIR);
+}
+
+bool gp100_ui_control_dismisses_warning(const gp100_ui_control_event_t *decoded)
+{
+    if (!gp100_ui_control_is_user_input(decoded)) {
+        return false;
+    }
+    if (decoded->kind == GP100_UI_CONTROL_BUTTON) {
+        return decoded->action == GP100_BUTTON_RELEASE ||
+               decoded->control <= GP100_BUTTON_FOOTSWITCH_PLUS;
+    }
+    return true;
+}

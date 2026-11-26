@@ -91,6 +91,15 @@ const char *gp100_encoder_name(gp100_encoder_id_t encoder);
  */
 #define GP100_UI_TICK_EVENT_CODE (UINT32_C(7) << 28)
 
+/* True for events that come from a person touching the pedal (knobs, buttons, footswitches). Expression
+ * pedal readings and synthetic ticks are not: they also arrive on their own (sensor noise, timers). */
+bool gp100_ui_control_is_user_input(const gp100_ui_control_event_t *decoded);
+
+/* True for a deliberate action that dismisses the Play "unsaved changes" warning: a button release,
+ * any footswitch action, a Quick knob, or a PARA turn. A bare PARA/EDIT/... press, hold or repeat does not
+ * (a push-encoder can report those while it is being turned). */
+bool gp100_ui_control_dismisses_warning(const gp100_ui_control_event_t *decoded);
+
 /* Decode expression, encoder, button, footswitch-pair and tick event classes. */
 bool gp100_decode_ui_control_event(
     const gp100_event_t *event,

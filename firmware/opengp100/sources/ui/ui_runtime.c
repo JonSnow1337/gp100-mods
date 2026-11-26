@@ -30,6 +30,7 @@ bool gp100_ui_runtime_set_mode(
     if (runtime->mode == mode) {
         return true;
     }
+    runtime->patch_editor.hint_alt = false;
     switch (mode) {
     case GP100_UI_MODE_PLAY:
         runtime->play_footswitch_release_pending = false;

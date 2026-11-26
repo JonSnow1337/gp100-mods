@@ -32,6 +32,7 @@ typedef struct gp100_firmware_runtime {
     uint16_t calibration_toe;
     bool preset_modified;
     bool settings_dirty;
+    uint32_t clock_ms;      /* millisecond clock, kept current by the application before each event */
 } gp100_firmware_runtime_t;
 
 typedef struct gp100_firmware_runtime_result {

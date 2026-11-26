@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gp100-mods"
-version = "0.3.1"
+version = "0.3.2"
 description = "Tools and a desktop app for customising OpenGP100 firmware on the Valeton GP-100 (boot animations, ...)"
 readme = "README.md"
 requires-python = ">=3.10"

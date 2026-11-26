@@ -84,6 +84,7 @@ typedef struct gp100_play_screen_snapshot {
     gp100_play_effect_t expression_pedal;
     bool preset_modified;
     bool drum_enabled;
+    bool unsaved_warning;      /* runtime state: shown over the footswitch area */
 } gp100_play_screen_snapshot_t;
 
 typedef struct gp100_play_screen_theme {

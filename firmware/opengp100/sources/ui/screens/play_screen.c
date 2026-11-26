@@ -878,6 +878,33 @@ static bool draw_controls(
                      theme->foreground_rgb565, theme->bottom_rgb565);
 }
 
+/* Shown after PARA was turned with unsaved edits: covers the footswitch area. */
+static bool draw_unsaved_warning(gp100_display_canvas_t *canvas,
+                                 const gp100_play_screen_theme_t *theme)
+{
+    const int32_t y = kMiddleY;
+    (void)gp100_display_fill_rect(canvas, kMiddleX, y, kMiddleWidth, kMiddleHeight,
+                                  theme->middle_rgb565);
+    for (int32_t inset = 0; inset < 2; ++inset) {
+        (void)gp100_display_draw_line(canvas, kMiddleX + inset, y + inset,
+                                      kMiddleX + kMiddleWidth - 1 - inset, y + inset, GP100_UI_DANGER);
+        (void)gp100_display_draw_line(canvas, kMiddleX + inset, y + kMiddleHeight - 1 - inset,
+                                      kMiddleX + kMiddleWidth - 1 - inset,
+                                      y + kMiddleHeight - 1 - inset, GP100_UI_DANGER);
+        (void)gp100_display_draw_line(canvas, kMiddleX + inset, y + inset,
+                                      kMiddleX + inset, y + kMiddleHeight - 1 - inset, GP100_UI_DANGER);
+        (void)gp100_display_draw_line(canvas, kMiddleX + kMiddleWidth - 1 - inset, y + inset,
+                                      kMiddleX + kMiddleWidth - 1 - inset,
+                                      y + kMiddleHeight - 1 - inset, GP100_UI_DANGER);
+    }
+    return draw_text(canvas, theme->small_font, 80, y + 4, "UNSAVED CHANGES",
+                     GP100_TEXT_ALIGN_CENTER, GP100_UI_DANGER, theme->middle_rgb565) &&
+           draw_text(canvas, theme->small_font, 80, y + 15, "Turn PARA again to go on",
+                     GP100_TEXT_ALIGN_CENTER, theme->foreground_rgb565, theme->middle_rgb565) &&
+           draw_text(canvas, theme->small_font, 80, y + 25, "edits lost unless SAVE",
+                     GP100_TEXT_ALIGN_CENTER, theme->disabled_rgb565, theme->middle_rgb565);
+}
+
 /* GP100_UI_ASSET_REPLACEMENT: screen composition and widget geometry. */
 bool gp100_play_screen_render(
     gp100_display_canvas_t *canvas,
@@ -927,9 +954,9 @@ bool gp100_play_screen_render(
         return false;
     }
     if (snapshot->preset_modified &&
-        !draw_text(canvas, theme->small_font, 146, 6, "*",
+        !draw_text(canvas, theme->small_font, 113, 6, "*",
                    GP100_TEXT_ALIGN_LEFT,
-                   theme->foreground_rgb565, theme->top_rgb565)) {
+                   theme->accent_rgb565, theme->top_rgb565)) {
         return false;
     }
     if (snapshot->footswitch_mode == GP100_FOOTSWITCH_MODE_PATCH) {
@@ -937,6 +964,9 @@ bool gp100_play_screen_render(
             return false;
         }
     } else if (!draw_stomp_mode(canvas, snapshot, theme)) {
+        return false;
+    }
+    if (snapshot->unsaved_warning && !draw_unsaved_warning(canvas, theme)) {
         return false;
     }
     return draw_controls(canvas, snapshot, theme);

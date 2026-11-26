@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#define GP100_UNSAVED_WARNING_GUARD_MS 400u
+
 typedef struct setting_default {
     gp100_settings_field_t field;
     int16_t value;
@@ -297,6 +299,34 @@ bool gp100_firmware_runtime_handle_event(
         return false;
     }
     memset(&next_result, 0, sizeof(next_result));
+    /* Unsaved-changes warning (Play mode only, PARA only; the footswitches never warn so a
+     * preset change on stage is always instant). First PARA turn with unsaved edits shows the
+     * warning, the next one goes on and discards them. Turns within the guard time of the warning
+     * are part of the same spin and are swallowed. Any other input dismisses the warning. */
+    const bool warning_was_shown = runtime->ui.unsaved_warning;
+    {
+        gp100_ui_control_event_t decoded;
+        if (gp100_decode_ui_control_event(event, &decoded) &&
+            gp100_ui_control_dismisses_warning(&decoded)) {
+            const bool para_turn = decoded.kind == GP100_UI_CONTROL_ENCODER &&
+                                   decoded.control == GP100_ENCODER_PARA;
+            if (runtime->ui.mode == GP100_UI_MODE_PLAY && runtime->preset_modified && para_turn) {
+                if (!warning_was_shown) {
+                    runtime->ui.unsaved_warning = true;
+                    runtime->ui.unsaved_warning_ms = runtime->clock_ms;
+                    next_result.live.ui_updates = GP100_UI_UPDATE_REDRAW;
+                    *result = next_result;
+                    return true;
+                }
+                if ((uint32_t)(runtime->clock_ms - runtime->ui.unsaved_warning_ms) <
+                    GP100_UNSAVED_WARNING_GUARD_MS) {
+                    *result = next_result;
+                    return true;
+                }
+            }
+            runtime->ui.unsaved_warning = false;
+        }
+    }
     was_preset_modified = runtime->preset_modified;
     was_settings_dirty = runtime->settings_dirty;
     /* Remember whether the preset was modified before a picker/removal starts, so that cancelling
@@ -343,6 +373,9 @@ bool gp100_firmware_runtime_handle_event(
     }
     if ((next_result.live.ui_updates & GP100_UI_UPDATE_SETTINGS) != 0u) {
         runtime->settings_dirty = true;
+    }
+    if (warning_was_shown && !runtime->ui.unsaved_warning) {
+        next_result.live.ui_updates |= GP100_UI_UPDATE_REDRAW;   /* take the warning off the screen */
     }
     next_result.settings_changed =
         next_result.live.preset_loaded ||

@@ -13,7 +13,8 @@ static const char *const switch_labels[] = {"None", "-", "+", "Both", "EXP"};
 static const char *const action_labels[GP100_PATCH_ACTION_COUNT] = {
     [GP100_PATCH_ACTION_INSERT] = "Insert before",
     [GP100_PATCH_ACTION_REMOVE] = "Remove",
-    [GP100_PATCH_ACTION_ASSIGN_EXPRESSION] = "Assign EXP"
+    [GP100_PATCH_ACTION_ASSIGN_EXPRESSION] = "Assign EXP",
+    [GP100_PATCH_ACTION_CLEAR] = "Clear preset"
 };
 
 static size_t parameter_page_count(const gp100_patch_block_t *block)
@@ -61,23 +62,15 @@ static bool move_picker_group(gp100_patch_editor_t *editor, bool forward)
     return false;
 }
 
-/* One detent of PARA: next/previous effect, flowing into the neighbouring group at the ends. */
+/* One detent of PARA or Quick 2: next/previous effect, wrapping inside the current group
+ * (Quick 1 is what changes the group). */
 static bool step_effect(gp100_patch_editor_t *editor, bool forward)
 {
     const size_t count = gp100_effect_picker_count(editor->group);
-    if (forward && editor->choice + 1u < count) {
-        ++editor->choice;
-        return true;
-    }
-    if (!forward && editor->choice > 0u) {
-        --editor->choice;
-        return true;
-    }
-    if (!move_picker_group(editor, forward)) {
+    if (count < 2u) {
         return false;
     }
-    editor->choice = forward ? 0u
-        : (uint16_t)(gp100_effect_picker_count(editor->group) - 1u);
+    editor->choice = (uint16_t)step(editor->choice, count, forward);
     return true;
 }
 
@@ -224,7 +217,32 @@ static gp100_edit_event_result_t remove_selected(gp100_patch_editor_t *editor,
     }
     editor->backup = before;
     editor->undo_available = true;
+    editor->undo_cleared = false;
     editor->picker = GP100_PATCH_PICK_NONE;
+    editor->page = 0u;
+    clear_preview(editor);
+    return GP100_EDIT_EVENT_PRESET_CHANGED;
+}
+
+/* "Clear preset": remove every effect (and with them the footswitch and expression assignments).
+ * Name, tempo and preset volume stay. EXIT right afterwards brings everything back. */
+static gp100_edit_event_result_t clear_preset(gp100_patch_editor_t *editor,
+                                              gp100_preset_record_t *preset)
+{
+    const gp100_preset_record_t before = *preset;
+
+    while (gp100_patch_count(preset) > 0u) {
+        if (!gp100_patch_remove(preset, 0u)) {
+            *preset = before;
+            editor->picker = GP100_PATCH_PICK_NONE;
+            return GP100_EDIT_EVENT_INVALID;
+        }
+    }
+    editor->backup = before;
+    editor->undo_available = true;
+    editor->undo_cleared = true;
+    editor->picker = GP100_PATCH_PICK_NONE;
+    editor->position = 0u;
     editor->page = 0u;
     clear_preview(editor);
     return GP100_EDIT_EVENT_PRESET_CHANGED;
@@ -292,9 +310,6 @@ static gp100_edit_event_result_t construct_adjust(
         if (!gp100_patch_update(preset, block)) {
             return GP100_EDIT_EVENT_INVALID;
         }
-    } else if (control == GP100_ENCODER_QUICK_2) {
-        open_effect_picker(editor, preset, block, true);
-        return GP100_EDIT_EVENT_NAVIGATED;
     } else {
         return GP100_EDIT_EVENT_UNHANDLED;
     }
@@ -329,6 +344,10 @@ static gp100_edit_event_result_t confirm_action(
     }
     if (editor->action == GP100_PATCH_ACTION_REMOVE) {
         return remove_selected(editor, preset);
+    }
+    if (editor->action == GP100_PATCH_ACTION_CLEAR) {
+        editor->picker = GP100_PATCH_PICK_CLEAR_CONFIRM;
+        return GP100_EDIT_EVENT_NAVIGATED;
     }
     if (gp100_patch_count(preset) >= GP100_PATCH_MAX_BLOCKS) {
         editor->result = GP100_PATCH_FULL;
@@ -420,6 +439,9 @@ gp100_edit_event_result_t gp100_patch_editor_handle(
         }
         return GP100_EDIT_EVENT_UNHANDLED;
     }
+    if (gp100_ui_control_is_user_input(&decoded)) {
+        editor->hint_alt = false;   /* a touch on a control brings the first hint back */
+    }
     /* A pending undo only lives until the next real action. */
     if (editor->undo_available &&
         !(decoded.kind == GP100_UI_CONTROL_BUTTON &&
@@ -442,7 +464,9 @@ gp100_edit_event_result_t gp100_patch_editor_handle(
         const bool forward = decoded.action == GP100_BUTTON_PRESS;
         editor->result = GP100_PATCH_OK;
         if (decoded.control == GP100_ENCODER_PARA) {
-            if (editor->picker == GP100_PATCH_PICK_ACTION) {
+            if (editor->picker == GP100_PATCH_PICK_CLEAR_CONFIRM) {
+                return GP100_EDIT_EVENT_NAVIGATED;      /* a question: only PARA (yes) or EXIT (no) */
+            } else if (editor->picker == GP100_PATCH_PICK_ACTION) {
                 editor->action = (gp100_patch_action_t)step(
                     editor->action, GP100_PATCH_ACTION_COUNT, forward);
             } else if (editor->picker == GP100_PATCH_PICK_EFFECT) {
@@ -532,6 +556,9 @@ gp100_edit_event_result_t gp100_patch_editor_handle(
         if (decoded.control != GP100_BUTTON_PARA) {
             return GP100_EDIT_EVENT_UNHANDLED;
         }
+        if (editor->picker == GP100_PATCH_PICK_CLEAR_CONFIRM) {
+            return clear_preset(editor, preset);
+        }
         if (editor->picker == GP100_PATCH_PICK_ACTION) {
             return selected ? confirm_action(editor, preset, &block)
                             : GP100_EDIT_EVENT_INVALID;
@@ -552,8 +579,13 @@ gp100_edit_event_result_t gp100_patch_editor_handle(
         return GP100_EDIT_EVENT_NAVIGATED;
     case GP100_BUTTON_PARA:
         if (construct) {
+            /* PARA adds an effect on the empty [+] slot; on an effect it does nothing
+             * (changing an effect is done in Edit mode). */
+            if (selected) {
+                return GP100_EDIT_EVENT_UNHANDLED;
+            }
             editor->result = GP100_PATCH_OK;
-            open_effect_picker(editor, preset, selected ? &block : NULL, selected);
+            open_effect_picker(editor, preset, NULL, false);
             return GP100_EDIT_EVENT_NAVIGATED;
         }
         if (!selected || block.algorithm == GP100_PATCH_UNKNOWN_ALGORITHM) {
@@ -605,6 +637,7 @@ const char *gp100_patch_editor_mode_label(const gp100_patch_editor_t *editor, gp
     switch (editor->picker) {
     case GP100_PATCH_PICK_EFFECT: return editor->replacing ? "CHANGE EFFECT" : "ADD EFFECT";
     case GP100_PATCH_PICK_ACTION: return "CHAIN MENU";
+    case GP100_PATCH_PICK_CLEAR_CONFIRM: return "CLEAR PRESET";
     case GP100_PATCH_PICK_EXPRESSION: return "ASSIGN EXP";
     default: return mode == GP100_UI_MODE_CONSTRUCT ? "SIGNAL CHAIN" : "EDIT";
     }
@@ -737,6 +770,7 @@ bool gp100_patch_editor_render(
 
     char user_name[8];
     char position[16];
+    char clear_text[32];
     gp100_patch_block_t selected;
     const char *warning = limit_message(editor->result);
     if (picker == GP100_PATCH_PICK_ACTION) {
@@ -747,6 +781,17 @@ bool gp100_patch_editor_render(
         screen.menu_count = GP100_PATCH_ACTION_COUNT;
         screen.menu_selected = editor->action;
         screen.hint = "[PARA] select  [EXIT] back";
+    } else if (picker == GP100_PATCH_PICK_CLEAR_CONFIRM) {
+        size_t length = 0u;
+        memcpy(clear_text, "Removes all ", 13u);
+        length = strlen(clear_text);
+        length = append_number(clear_text, sizeof(clear_text), length, count);
+        if (length + 9u < sizeof(clear_text)) {
+            memcpy(clear_text + length, " effects", 9u);
+        }
+        screen.panel_title = "Clear preset?";
+        screen.panel_value = clear_text;
+        screen.hint = "[PARA] clear  [EXIT] cancel";
     } else if (picker == GP100_PATCH_PICK_EXPRESSION &&
                gp100_patch_block_at(preset, screen.selected_position, &selected)) {
         const gp100_patch_expression_t *draft = &editor->expression;
@@ -791,18 +836,20 @@ bool gp100_patch_editor_render(
         screen.hint = "[PARA] keep  [EXIT] cancel";
     } else if (!gp100_patch_block_at(preset, screen.selected_position, &selected)) {
         screen.panel_title = construct ? "Empty slot" : "No effects in this preset";
-        screen.panel_value = construct ? "Press PARA to add" : "Press EDIT to add";
-        screen.hint = construct ? "[PARA] add  [EXIT] back" : "[EDIT] add effect";
+        /* Effects are added in Signal Chain (EDIT in Edit only replaces an effect), so Edit points there. */
+        screen.panel_value = construct ? "Press PARA to add" : "Hold PARA to add effects";
+        screen.hint = construct ? "[PARA] add  [EXIT] back" : "[HOLD PARA] signal chain";
     } else {
         screen.selection_label = gp100_edit_screen_model_name(
             selected.family, selected.algorithm, user_name);
         const bool available = gp100_effect_available(selected.family, selected.algorithm);
         if (construct) {
+            /* Quick 1 footswitch, Quick 2 unused, Quick 3 order. */
             set_slot(&screen.slots[0], GP100_EDIT_SLOT_STOMP_SWITCH,
                      "Footsw.", switch_labels[selected.footswitches]);
-            set_slot(&screen.slots[1], GP100_EDIT_SLOT_ALGORITHM, "Effect", "Change");
             set_slot(&screen.slots[2], GP100_EDIT_SLOT_ALGORITHM, "Order", "Move");
-            screen.hint = "[PARA] effect  [EDIT] menu";
+            screen.hint = editor->hint_alt ? "[HOLD PARA] edit  [EXIT] back"
+                                           : "[PARA] select  [EDIT] menu";
         } else if (!available) {
             screen.panel_title = "Unavailable";
             screen.panel_value = "Press EDIT to replace";
@@ -812,16 +859,45 @@ bool gp100_patch_editor_render(
             if (!fill_page(&screen, &selected)) {
                 return false;
             }
-            screen.hint = screen.page_count > 1u ? "[PARA] page  [EDIT] effect"
-                                                 : "[EDIT] effect  [HOLD PARA] chain";
+            /* Two hints take turns every few seconds (see gp100_patch_editor_hint_swap). */
+            if (editor->hint_alt) {
+                screen.hint = "[HOLD PARA] signal chain";
+            } else {
+                screen.hint = screen.page_count > 1u ? "[PARA] page  [EDIT] effect"
+                                                     : "[EDIT] effect  [EXIT] play";
+            }
         }
     }
     if (construct && editor->undo_available && picker == GP100_PATCH_PICK_NONE) {
-        screen.hint = "Removed - [EXIT] undo";
+        screen.hint = editor->undo_cleared ? "Cleared - [EXIT] undo" : "Removed - [EXIT] undo";
     }
     if (warning != NULL) {
         screen.hint = warning;
         screen.hint_is_warning = true;
     }
     return gp100_edit_screen_render(canvas, &screen, theme);
+}
+
+/* The Edit and Signal Chain screens have two hints that take turns every few seconds. The
+ * application calls this when the controls have been idle; it returns true when the screen
+ * changed (there was a second hint to show). */
+bool gp100_patch_editor_hint_swap(gp100_patch_editor_t *editor, gp100_ui_mode_t mode,
+                                  const gp100_preset_record_t *preset)
+{
+    if (editor == NULL || preset == NULL || !gp100_patch_is_native(preset) ||
+        (mode != GP100_UI_MODE_EDIT && mode != GP100_UI_MODE_CONSTRUCT) ||
+        editor->picker != GP100_PATCH_PICK_NONE || editor->undo_available ||
+        limit_message(editor->result) != NULL) {
+        return false;
+    }
+    const bool construct = mode == GP100_UI_MODE_CONSTRUCT;
+    const size_t position = editor->position < last_position(preset, construct)
+                                ? editor->position : last_position(preset, construct);
+    gp100_patch_block_t block;
+    if (!gp100_patch_block_at(preset, position, &block) ||
+        (!construct && !gp100_effect_available(block.family, block.algorithm))) {
+        return false;   /* empty slot or unavailable effect: one hint only */
+    }
+    editor->hint_alt = !editor->hint_alt;
+    return true;
 }

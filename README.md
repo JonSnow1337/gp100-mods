@@ -72,7 +72,7 @@ Needs your official V2.1 file, an Arm GNU toolchain (10.3), CMake and git. Paths
 ```sh
 pip install -e .
 python -m gp100mods opengp100-build --stock-fw GP-100-Firmware-V2.1.bin --fetch-deps \
-    --out opengp100-update.bin --register-version 0.3.1 --register-notes "what changed"
+    --out opengp100-update.bin --register-version 0.3.2 --register-notes "what changed"
 ```
 
 This builds OpenGP100 as a Valeton update file, adds the app's reserved areas and (with `--register-version`) adds it to the bundle.

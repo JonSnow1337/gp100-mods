@@ -107,7 +107,9 @@ static uint32_t s_hardwareTestTickMs;
 /* Effect preview debounce: the picker loads the highlighted effect once the PARA knob has been still. */
 static bool s_previewWaiting;
 static uint32_t s_previewDeadlineMs;
+static uint32_t s_hintDeadlineMs;     /* next swap of the two hints on the Edit / Signal Chain screens */
 #define GP100_PREVIEW_DEBOUNCE_MS 140u
+#define GP100_HINT_SWAP_MS 3000u
 static gp100_settings_writer_t s_settingsWriter;
 static gp100_settings_record_t s_settingsToSave;
 static bool s_audioRhythmEnabled;
@@ -759,7 +761,7 @@ bool GP100_ApplicationRender(void)
         GP100_LoadSaveDestinationName(destinationName);
     }
     memset(&context, 0, sizeof(context));
-    context.firmware_version = "development";
+    context.firmware_version = "0.3.2";
     context.save_destination_name = destinationName;
     context.hardware_info = "GP-100";
     context.hardware_variant = "reference board";
@@ -1434,6 +1436,7 @@ static bool GP100_ApplicationHandleEvent(const gp100_event_t *event)
 
     /* The audio ISR advances the same Looper object. Keep its control-state
      * transitions atomic with respect to one 64-frame processing block. */
+    s_runtime.clock_ms = g_gp100_board_state.milliseconds;
     interruptMask = DisableGlobalIRQ();
     handled = gp100_firmware_runtime_handle_event(
         &s_runtime, event, GP100_LoadPreset, NULL, &result);
@@ -1487,6 +1490,15 @@ static bool GP100_ApplicationHandleEvent(const gp100_event_t *event)
         s_status.display_initialized)
     {
         (void)GP100_ApplicationRender();
+    }
+    {
+        gp100_ui_control_event_t touched;
+
+        if (gp100_decode_ui_control_event(event, &touched) &&
+            gp100_ui_control_is_user_input(&touched))
+        {
+            s_hintDeadlineMs = g_gp100_board_state.milliseconds + GP100_HINT_SWAP_MS;
+        }
     }
     s_previewWaiting = GP100_ApplicationPreviewPending();
     if (s_previewWaiting)
@@ -1824,6 +1836,16 @@ bool GP100_ApplicationService(void)
         {
             sawEvent = true;
             (void)GP100_ApplicationHandleEvent(&tick);
+        }
+    }
+    if ((uint32_t)(g_gp100_board_state.milliseconds - s_hintDeadlineMs) < UINT32_C(0x80000000))
+    {
+        s_hintDeadlineMs = g_gp100_board_state.milliseconds + GP100_HINT_SWAP_MS;
+        if (s_status.display_initialized &&
+            gp100_patch_editor_hint_swap(&s_runtime.ui.patch_editor, s_runtime.ui.mode,
+                                         &s_runtime.preset))
+        {
+            (void)GP100_ApplicationRender();
         }
     }
     if (s_runtime.ui.mode == GP100_UI_MODE_HARDWARE_TEST &&

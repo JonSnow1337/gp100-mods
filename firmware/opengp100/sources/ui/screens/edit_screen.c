@@ -938,7 +938,9 @@ static bool render_native_card(gp100_display_canvas_t *canvas,
     const int32_t middle = x + kChainCardWidth / 2;
     const uint16_t accent = available ? theme->effect_rgb565[card->family]
                                       : theme->track_rgb565;
-    uint16_t border = enabled ? accent : theme->track_rgb565;
+    /* Every unselected box looks the same; only the selected one (red) stands out, and a
+     * bypassed effect gets a darker border (and dimmed art). The family colour stays on the icon. */
+    uint16_t border = enabled ? theme->disabled_rgb565 : theme->track_rgb565;
     if (selected) {
         border = theme->chain_selection_rgb565;
         draw_border(canvas, x + 1, kChainY + 1,
@@ -1105,14 +1107,15 @@ static bool render_parameter_panel(
     }
     if (snapshot->menu_items != NULL) {
         for (size_t item = 0; item < snapshot->menu_count; ++item) {
-            const int32_t spacing = snapshot->menu_count > 3u ? 8 : 10;
-            const int32_t y = 89 + (int32_t)item * spacing;
+            const bool compact = snapshot->menu_count > 3u;      /* four entries: 8 px rows */
+            const int32_t spacing = compact ? 8 : 10;
+            const int32_t y = (compact ? 88 : 89) + (int32_t)item * spacing;
             const bool selected = item == snapshot->menu_selected;
             const uint16_t color = selected ? theme->selected_rgb565
                                             : theme->foreground_rgb565;
             if (selected) {
                 (void)gp100_display_fill_rect(
-                    canvas, 3, y - 1, 154u, 9u, theme->value_rgb565);
+                    canvas, 3, compact ? y : y - 1, 154u, compact ? 8u : 9u, theme->value_rgb565);
                 if (!draw_text(canvas, theme->small_font, 6, y, ">",
                                GP100_TEXT_ALIGN_LEFT, color, theme->value_rgb565)) {
                     return false;
