@@ -6,7 +6,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import features, frmw, presets as P
+from . import drums as D, features, frmw, presets as P
 from .bootanim import format as F
 
 SLOT_BASE = 0x80000
@@ -81,7 +81,8 @@ def _seal(data: bytes, sections: list) -> bytes:
     return out
 
 
-def compose(section0: bytes, valeton, anim: F.Animation | None = None, patches=(), flags: int | None = None, fills=(), presets=()) -> bytes:
+def compose(section0: bytes, valeton, anim: F.Animation | None = None, patches=(), flags: int | None = None, fills=(), presets=(),
+            drums=None) -> bytes:
     """OpenGP100 section 0 (as bundled) + the user's verified Valeton parts + switch patches + boot animation
     (None = built-in logo) -> a complete update file for the GP-100 app.
 
@@ -91,6 +92,9 @@ def compose(section0: bytes, valeton, anim: F.Animation | None = None, patches=(
     flags: feature flags to store in the firmware (None = leave the block as bundled); needs a firmware that has the block.
     presets: preset records (presets.Preset.record bytes, None = leave the slot empty), slot P01 first. They are stored after the
     boot animation (docs: patch 0004) and shown in a slot until something is saved there.
+    drums: a drums.Kit (our own drum samples). Its sample bank is written over the firmware's drum-sample region, which is then no
+    longer restored from the official file. The rhythm patterns are always Valeton's (restored from `fills`); None = Valeton's
+    drum samples too.
     patches: iterable of {"offset", "old", "new"} relative to section 0. Each patch is refused unless the bytes there are
     exactly `old` (or already `new`), so a patch can only ever be applied to the build it was written for."""
     sec0 = bytearray(section0)
@@ -98,6 +102,13 @@ def compose(section0: bytes, valeton, anim: F.Animation | None = None, patches=(
         raise ValueError("this firmware has no boot-animation area")
     area = F.build_area(anim) if anim and anim.frames else F.empty_area()
     area += b"\xff" * (-len(area) % 4)
+    if drums is not None:
+        f = {x.name: x for x in fills}.get("drum samples")
+        if f is None or f.length != D.SAMPLE_BANK_SIZE or len(drums.samples) != D.SAMPLE_BANK_SIZE:
+            raise ValueError("this firmware version cannot take a custom drum kit")
+        D.verify(drums.samples)
+        sec0[f.dest:f.dest + f.length] = drums.samples
+        fills = [x for x in fills if x.name != "drum samples"]
     if fills:
         import hashlib
         official = valeton.section0 if getattr(valeton, "file", b"") else b""

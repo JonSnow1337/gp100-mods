@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLineEdit,
                                QMessageBox, QProgressBar, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
-from gp100mods import features, frmw, presets as presets_mod, update_file
+from gp100mods import drums, features, frmw, presets as presets_mod, update_file
 from gp100mods.bundle import latest
 from gp100mods.defaults import DOGBOOT_GIF, dogboot_bytes
 from gp100mods.bootanim import encode as E
@@ -443,6 +443,14 @@ class OpenGP100Page(BasePage):
         self.options_card.body.addWidget(self.fine_master)
         self.options_card.body.addWidget(self.fine_master_note)
 
+        self.new_drums = QCheckBox("New drum sounds")
+        self.new_drums.setChecked(True)
+        self.new_drums_note = label("A new set of drum sounds (CrocellKit); the rhythms stay Valeton's. Untick to keep the original "
+                                    "Valeton drum sounds. Credit: drum sounds from CrocellKit by Lars Muldjord (CC BY 4.0).",
+                                    role="small")
+        self.options_card.body.addWidget(self.new_drums)
+        self.options_card.body.addWidget(self.new_drums_note)
+
         self.presets_card = Card("Presets")
         self.presets_card.body.addWidget(label(
             "Add presets from the Valeton editor (.prst files). They are converted to OpenGP100 presets and installed in "
@@ -486,8 +494,12 @@ class OpenGP100Page(BasePage):
         if not fw:
             return
         self.notes.setText(f"{fw.label}  (v{fw.version})" + (f" - {fw.notes}" if fw.notes else ""))
-        while self.options_card.body.count() > 2:           # keep the fixed fine-MASTER checkbox and its note
-            it = self.options_card.body.takeAt(2)
+        has_drums = "drum samples" in {f.name for f in fw.fills}     # only builds that have the drum-sample region
+        self.new_drums.setEnabled(has_drums)
+        self.new_drums.setVisible(has_drums)
+        self.new_drums_note.setVisible(has_drums)
+        while self.options_card.body.count() > 4:           # keep the fixed checkboxes (fine MASTER, new drums) and their notes
+            it = self.options_card.body.takeAt(4)
             if it.widget():
                 it.widget().deleteLater()
         has_fine = features.supports_fine_master(fw.load())
@@ -574,8 +586,9 @@ class OpenGP100Page(BasePage):
         if features.supports_fine_master(sec0) and features.supports(sec0):
             flags = features.read(sec0) or 0
             flags = (flags | features.FINE_MASTER_VOLUME) if self.fine_master.isChecked() else (flags & ~features.FINE_MASTER_VOLUME)
+        kit = drums.load_kit() if self.new_drums.isEnabled() and self.new_drums.isChecked() else None
         return update_file.compose(sec0, self.get_parts(), self.media.animation, self.selected_patches(),
-                                   flags=flags, fills=fw.fills, presets=recs)
+                                   flags=flags, fills=fw.fills, presets=recs, drums=kit)
 
     def default_name(self):
         return f"GP100_{self.current_firmware().id}{'_animation' if self.media.uses_animation else ''}.bin"
