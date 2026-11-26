@@ -134,6 +134,10 @@ def add_firmware(src, *, label, version, notes="", directory: Path | None = None
         raise ValueError(f"{src}: {info.message}")
     d.mkdir(parents=True, exist_ok=True)
     sec0 = update_file.section0_of(Path(src).read_bytes())
+    # Everything behind the (empty) boot-animation header is erased flash (0xFF): compose() pads it back, so do not store it.
+    keep = update_file.AREA_REL + update_file.F.HEADER_BYTES
+    if sec0[keep:].count(0xFF) == len(sec0) - keep:
+        sec0 = sec0[:keep]
     fills = []
     if fills_spec is not None:
         # A build from the repository source has placeholder audio, so the recipe cannot be derived by comparison: use the stored one.

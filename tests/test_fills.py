@@ -70,7 +70,7 @@ def test_placeholder_assets_have_the_sizes_the_packer_needs(tmp_path):
     import importlib.util
     from pathlib import Path
     from gp100mods.opengp100 import build
-    pack = Path(__file__).resolve().parents[1] / "firmware/opengp100/upstream/sources/tools/pack_factory_banks.py"
+    pack = Path(__file__).resolve().parents[1] / "firmware/opengp100/sources/tools/pack_factory_banks.py"
     if not pack.is_file():
         pytest.skip("vendored OpenGP100 source not present")
     import sys

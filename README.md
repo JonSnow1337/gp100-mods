@@ -51,9 +51,8 @@ Please report what happens if you try them.
 An update file has a header and four sections. In OpenGP100 mode, section 0 (the main program) is the bundled OpenGP100 build
 and everything else is from your official file; in original+mods mode, section 0 is your official file, patched.
 
-* [`firmware/opengp100/upstream/`](firmware/opengp100/upstream/): OpenGP100 source, used with the author's written permission.
-* [`firmware/opengp100/patches/`](firmware/opengp100/patches/): make it run in Valeton's bootloader slot, play a boot
-  animation, install your presets.
+* [`firmware/opengp100/sources/`](firmware/opengp100/sources/): OpenGP100 source, used with the author's written permission, with
+  our changes committed on top (boot animation, your presets, finer MASTER; see [`firmware/opengp100/README.md`](firmware/opengp100/README.md)).
 * `src/gp100mods/data/firmware/`: the compiled OpenGP100 build. Valeton's drum samples/patterns are stored blank and restored
   from your own official file at generation time (hash-checked, see `firmware/opengp100/valeton_fills.json`).
 
@@ -73,11 +72,11 @@ python -m gp100mods opengp100-build --stock-fw "GP-100 Firmware V2.1.bin" --fetc
     --out opengp100-update.bin --register-version 0.7 --register-notes "what changed"
 ```
 
-This applies the patches, builds, wraps the result into an update file and (with `--register-version`) adds it to the bundle.
+This builds OpenGP100 as a Valeton update file, adds the app's reserved areas and (with `--register-version`) adds it to the bundle.
 To add an existing update file: `python -m gp100mods firmware-add FILE --version 0.5 --fills firmware/opengp100/valeton_fills.json`.
 The packaged app must be built on each OS (`packaging/build-windows.ps1`, or `.github/workflows/app.yml`).
 
-Tests: `pip install -e ".[app,dev]" && pytest` (optional env vars: `GP100_V21_FILE`, `GP100_FW_TREE`, `GP100_FW_LIB`).
+Tests: `pip install -e ".[app,dev]" && pytest` (optional env vars: `GP100_V21_FILE`, `GP100_FW_TREE` = `firmware/opengp100`, `GP100_FW_LIB` = `libgp100_core.a` from `make host-check`).
 
 ## License
 

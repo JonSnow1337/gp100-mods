@@ -2,7 +2,7 @@
 
 Stored at flash offset `0x1CC000`, at most 1 MiB, inside section 0 of the update file (section-0 offset `0x14C000`).
 Little-endian. Reference implementations: `src/gp100mods/bootanim/format.py` (writer/reader) and
-`ui/boot_animation.c` in patch 0002 (firmware).
+`ui/boot_animation.c` (firmware).
 
 | Offset | Size | Field |
 | --- | --- | --- |

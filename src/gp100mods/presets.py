@@ -5,7 +5,7 @@ footswitch and expression-pedal assignments. OpenGP100 has its own preset format
 0x30E-byte record holding up to 8 blocks in any order. Switched-off blocks that no footswitch can turn on are left out; if a
 preset needs more processing power than the pedal has, the least audible blocks are dropped and reported as warnings.
 
-The converted records travel inside the update file as a "GPPR" block (app/factory_presets.h in patch 0004) placed right
+The converted records travel inside the update file as a "GPPR" block (app/factory_presets.h in the firmware) placed right
 after the boot-animation area. A slot shows its factory preset until you save something there.
 """
 from __future__ import annotations

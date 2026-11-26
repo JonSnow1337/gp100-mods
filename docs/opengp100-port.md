@@ -1,30 +1,35 @@
 # Making OpenGP100 installable through the GP-100 app
 
-OpenGP100 is normally flashed with an SWD probe as a whole-chip image that replaces Valeton's bootloader. The patches in
-`firmware/opengp100/patches` instead link it **into Valeton's slot B** and keep executing in place from flash.
+OpenGP100 is normally flashed with an SWD probe as a whole-chip image that replaces Valeton's bootloader. Its `gp100_stock_slot`
+target (by its author) instead builds it for **Valeton's slot B** and wraps it into a Valeton update file, so the official GP-100
+app can install it and the bootloader (and the footswitch + PARA recovery mode) stays untouched.
 
-* The slot header and a 1 KiB vector table come first. The bootloader copies only the vector table to `0x0` and jumps to
-  its reset vector; OpenGP100's own start-up code then takes over (it sets VTOR to the table in flash).
-* The SDRAM payload is 32 bytes of filler: `select_slot` rejects a slot with any zero src/len word.
-* Rhythm banks stay at their fixed flash offsets (`0x133DDC`, `0x1C7414`), the cabinet bank is update section 2.
+* The slot header is Valeton's own (same words as the stock file, so the bootloader accepts it). The bootloader copies the ITCM
+  payload to `0x0` and jumps through its second word: a tiny trampoline (`board/stock_slot_entry.S`).
+* The trampoline runs from flash with no stack. It switches the FlexRAM bank layout (Valeton gives all 16 banks to ITCM/DTCM,
+  OpenGP100 needs 8 OCRAM banks for its DMA buffers plus DTCM and ITCM), then enters the normal SDK start-up. The image itself
+  executes in place from flash, 4 KiB above the slot header.
+* Rhythm banks stay at their fixed flash offsets (`0x133DDC`, `0x1C7414`), the cabinet bank is update section 2. Section 0 keeps
+  Valeton's size (`0x29FAEC`), erased flash (0xFF) behind the data.
+* The app's build step (`gp100mods.opengp100.finish`) adds two reserved areas of that erased space: the feature-flag block
+  (`0x1CBF00`) and the boot-animation / factory-preset area (`0x1CC000`).
 
-## Three bugs this exposed (all boot-path related)
+## Boot-path pitfalls (found on a real pedal with our first, own slot layout)
 
-1. **Zero SDRAM length** - the bootloader silently kept booting the updater.
-2. **Vector table alignment** - VTOR ignores bits 6:0 and the M7 needs the table aligned to its size rounded up to a power of
-   two (176 vectors -> 1 KiB). A table at slot+0x20 made the core lock up on the first interrupt (SysTick).
-3. **No OCRAM** - Valeton's bootloader gives all FlexRAM to ITCM/DTCM, so memory at `0x20200000` does not exist. OpenGP100
-   keeps its DMA buffers (SAI audio, USB) there: the DMA writes vanished, input read as zeros and nothing reached the DAC.
-   The `.ncache` sections now live in DTCM.
+1. **Zero SDRAM length** - the bootloader silently kept booting the updater (`select_slot` rejects a slot with any zero src/len word).
+2. **Vector table alignment** - VTOR ignores bits 6:0 and the M7 needs the table aligned to its size rounded up to a power of two.
+3. **No OCRAM** - with Valeton's FlexRAM layout, memory at `0x20200000` does not exist: DMA writes vanished and nothing reached the DAC.
 
-`gp100mods.frmw` checks 1 and 2 on every update file, and the packer refuses to produce them.
+His stock-slot target solves all three by construction (Valeton's own header, a 4 KiB aligned vector table, the FlexRAM switch).
+`gp100mods.frmw` and `opengp100.finish` still check what can be checked offline (header words, Thumb entry, reserved areas free), and
+`python -m gp100mods bootloader-sim` replays the bootloader's slot selection on an update file against a flash dump.
 
 ## Boot animation
 
-Patch 0002 adds `ui/boot_animation.c`: if the reserved area at flash `0x1CC000` holds a valid animation (see
+Our `ui/boot_animation.c` (in the firmware): if the reserved area at flash `0x1CC000` holds a valid animation (see
 [boot-animation-format.md](boot-animation-format.md)) it is played at boot instead of the built-in logo.
 
-## Factory presets (patch 0004)
+## Factory presets
 
 The app converts Valeton editor presets (`.prst`, see `src/gp100mods/presets.py`) into OpenGP100's native preset records and stores them
 in a "GPPR" block right after the boot-animation area (4 KiB aligned; the firmware finds it from the animation header's size). Layout:

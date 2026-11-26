@@ -1,4 +1,4 @@
-/* Host test for patch 0003: the built-in starter preset must pass OpenGP100's own chain validation, and the firmware's feature-flag
+/* Host test: the built-in starter preset must pass OpenGP100's own chain validation, and the firmware's feature-flag
  * parser must agree with the Python writer.
  * Build: gcc -I<every dir under fw/sources> test_starter.c <fw>/sources/app/starter_preset.c <fw>/sources/app/feature_flags.c libgp100_core.a -lm
  * Usage: ./a.out            -> prints the starter chain

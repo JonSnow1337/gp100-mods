@@ -53,12 +53,17 @@ def main():
     sp, entry = struct.unpack_from("<2I", itcm, 0)
     print(f"ITCM[0]={sp:#x}  ITCM[1] (jump target)={entry:#x}")
     assert entry & 1, "target is not Thumb"
-    foff = (entry & ~1) - 0x60000000
-    print("target is in flash offset", hex(foff), "inside slot:", 0x80000 <= foff < 0x31FAEA)
+    if entry < 0x80000:                   # inside ITCM: OpenGP100's stock-slot trampoline (it then switches FlexRAM and jumps to flash)
+        print("target is in ITCM (a trampoline copied by the bootloader), not in flash")
+        code, base = bytes(itcm[(entry & ~1):(entry & ~1) + 48]), entry & ~1
+    else:
+        foff = (entry & ~1) - 0x60000000
+        print("target is in flash offset", hex(foff), "inside slot:", 0x80000 <= foff < 0x31FAEA)
+        code, base = fl[foff:foff + 48], entry & ~1
     with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as t:
-        t.write(fl[foff:foff + 48]); n = t.name
+        t.write(code); n = t.name
     out = subprocess.check_output(["arm-none-eabi-objdump", "-D", "-b", "binary", "-marm", "-Mforce-thumb",
-                                   f"--adjust-vma={entry & ~1:#x}", n], text=True)
+                                   f"--adjust-vma={base:#x}", n], text=True)
     os.unlink(n)
     print("\n".join(out.splitlines()[7:17]))
 

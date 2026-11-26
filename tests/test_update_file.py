@@ -51,3 +51,13 @@ def test_never_overwrites_input(update_file):
 def test_rejects_non_firmware(tmp_path):
     p = tmp_path / "x.gif"; p.write_bytes(b"GIF89a" + bytes(500))
     assert not U.inspect(p).ok
+
+
+def test_update_keeps_the_stock_section_sizes(update_file, tmp_path):
+    """Like OpenGP100's own update file (and Valeton's), section 0 is 0x29FAEC bytes with erased flash behind the data."""
+    out = tmp_path / "o.bin"
+    U.write_animation(update_file, out, sample())
+    data = out.read_bytes()
+    assert [s for _, s in U._sections(data)[1]] == [0x29FAEC, 0x4000, 0x28500, 0x78000]
+    sec0 = U.section0_of(data)
+    assert set(sec0[-0x1000:]) == {0xFF}

@@ -11,6 +11,7 @@ from .bootanim import format as F
 
 SLOT_BASE = 0x80000
 AREA_REL = F.FLASH_OFFSET - SLOT_BASE            # offset of the animation area inside section 0
+SEC0_SIZE = 0x29FAEC                             # section 0 of Valeton's V2.1 file; OpenGP100's own update files keep this size
 
 
 @dataclass
@@ -91,7 +92,7 @@ def compose(section0: bytes, valeton, anim: F.Animation | None = None, patches=(
     against its SHA-256, so a wrong or damaged official file can never produce a firmware.
     flags: feature flags to store in the firmware (None = leave the block as bundled); needs a firmware that has the block.
     presets: preset records (presets.Preset.record bytes, None = leave the slot empty), slot P01 first. They are stored after the
-    boot animation (docs: patch 0004) and shown in a slot until something is saved there.
+    boot animation (see docs/opengp100-port.md) and shown in a slot until something is saved there.
     drums: a drums.Kit (our own drum samples). Its sample bank is written over the firmware's drum-sample region, which is then no
     longer restored from the official file. The rhythm patterns are always Valeton's (restored from `fills`); None = Valeton's
     drum samples too.
@@ -142,6 +143,7 @@ def compose(section0: bytes, valeton, anim: F.Animation | None = None, patches=(
     if len(area) > F.AREA_BYTES:
         raise ValueError("the boot animation and the presets do not fit together; use a shorter animation or fewer presets")
     sec0 = bytes(sec0[:AREA_REL]) + area
+    sec0 += b"\xff" * (SEC0_SIZE - len(sec0))                         # erased flash, as in OpenGP100's own update file
     return _seal(valeton.header, [sec0, *valeton.sections])
 
 

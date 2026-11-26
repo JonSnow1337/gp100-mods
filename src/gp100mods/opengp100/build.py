@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Build OpenGP100 as a firmware update file that the official GP-100 app can install.
 
-OpenGP100's source (by another author, used with his permission) lives in firmware/opengp100/upstream; --upstream can point at
-another checkout. You also need the NXP MCUXpresso SDK (--sdk/--usb or --fetch-deps) and an Arm GNU toolchain. The script
+OpenGP100's source (by another author, used with his permission, with our changes committed on top - see
+firmware/opengp100/UPSTREAM.md) lives in firmware/opengp100/sources; --sources can point at another copy. You also need the NXP
+MCUXpresso SDK (--sdk/--usb or --fetch-deps) and an Arm GNU toolchain. The script
 
-  1. checks that --stock-fw is the official Valeton V2.1 update (its sections 1-3 are reused unchanged),
-  2. copies the upstream tree to a work directory, creates PLACEHOLDER audio assets (Valeton's drum, pattern and cabinet data is
-     not part of the repository; the app restores it from the user's official file) and applies the patches,
-  3. builds it with CMake,
-  4. wraps the result into a 4-section update file at a slot of Valeton's bootloader (see docs/opengp100-port.md),
+  1. checks that --stock-fw is the official Valeton V2.1 update (OpenGP100's build uses it as the update-file template),
+  2. copies the source tree to a work directory and creates PLACEHOLDER audio assets (Valeton's drum, pattern and cabinet data is
+     not part of the repository; the app restores it from the user's official file),
+  3. builds OpenGP100's gp100_stock_slot target with CMake. That gives a complete update file for Valeton's bootloader slot,
+  4. adds the app's reserved areas (feature flags, empty boot animation; see opengp100/finish.py),
   5. with --register-version, registers it in the app bundle (src/gp100mods/data/firmware, git-ignored) with Valeton's data blanked.
 
 The bootloader and the footswitch + PARA recovery mode are never touched by this update.
@@ -64,16 +65,13 @@ def ensure_placeholder_assets(sources: Path):
             _silent_wav(cabinets / f"{i:02d}-placeholder.wav", 1024, 3)
 
 
-def default_upstream() -> Path:
+def firmware_dir() -> Path:
     env = os.environ.get("GP100MODS_FIRMWARE_DIR")
-    base = Path(env) if env else Path(__file__).resolve().parents[3] / "firmware"
-    return base / "opengp100" / "upstream"
+    return (Path(env) if env else Path(__file__).resolve().parents[3] / "firmware") / "opengp100"
 
 
-def patches_dir() -> Path:
-    env = os.environ.get("GP100MODS_FIRMWARE_DIR")
-    base = Path(env) if env else Path(__file__).resolve().parents[3] / "firmware"
-    return base / "opengp100" / "patches"
+def default_sources() -> Path:
+    return firmware_dir() / "sources"
 
 
 def run(cmd, **kw):
@@ -95,8 +93,8 @@ def fetch_deps(dest: Path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--upstream", type=Path, default=None,
-                    help="an OpenGP100 checkout (the directory that contains sources/); default: firmware/opengp100/upstream")
+    ap.add_argument("--sources", type=Path, default=None,
+                    help="an OpenGP100 sources/ directory (the one with CMakeLists.txt); default: firmware/opengp100/sources")
     ap.add_argument("--stock-fw", type=Path, required=True, help="the official GP-100 Firmware V2.1 file")
     ap.add_argument("--out", type=Path, required=True, help="update file to write")
     ap.add_argument("--workdir", type=Path, default=Path("build-opengp100"))
@@ -110,12 +108,12 @@ def main():
     ap.add_argument("--register-notes", default="")
     ap.add_argument("--register-dir", type=Path, help="bundle directory (default: the app's src/gp100mods/data/firmware)")
     a = ap.parse_args()
-    if a.upstream is None:
-        a.upstream = default_upstream()
+    if a.sources is None:
+        a.sources = default_sources()
 
     known.require_v21(a.stock_fw)
-    if not (a.upstream / "sources" / "CMakeLists.txt").is_file():
-        sys.exit(f"{a.upstream}: expected an OpenGP100 checkout containing sources/CMakeLists.txt")
+    if not (a.sources / "CMakeLists.txt").is_file():
+        sys.exit(f"{a.sources}: expected an OpenGP100 sources directory containing CMakeLists.txt")
     for tool in ("git", "cmake"):
         if shutil.which(tool) is None:
             sys.exit(f"'{tool}' not found in PATH")
@@ -133,14 +131,13 @@ def main():
     tree = a.workdir / "tree"
     if tree.exists():
         shutil.rmtree(tree)
-    shutil.copytree(a.upstream / "sources", tree / "sources",
-                    ignore=shutil.ignore_patterns("build*", "__pycache__", ".git"))
+    shutil.copytree(a.sources, tree / "sources", ignore=shutil.ignore_patterns("build", "build-*", "__pycache__", ".git"))
     ensure_placeholder_assets(tree / "sources")
-    patches = sorted(patches_dir().glob("*.patch"))
-    if not patches:
-        sys.exit(f"no patches found in {patches_dir()}")
-    for p in patches:
-        run(["git", "apply", "-p1", "--whitespace=nowarn", p.resolve()], cwd=tree)
+    # OpenGP100's CMake does not quote the template path, so give it one without spaces.
+    template = (a.workdir / "valeton-v2.1-template.bin").resolve()
+    shutil.copyfile(a.stock_fw, template)
+    if " " in str(template) or " " in str(sdk) or " " in str(usb):
+        sys.exit("OpenGP100's build cannot handle spaces in paths: use a --workdir/--sdk/--usb without spaces")
 
     build = a.workdir / "cmake-build"
     onoff = "OFF" if a.no_audio else "ON"
@@ -148,17 +145,16 @@ def main():
          f"-DCMAKE_TOOLCHAIN_FILE={tree / 'sources' / 'cmake' / 'arm-none-eabi.cmake'}",
          f"-DTOOLCHAIN={a.toolchain}", "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
          f"-DMCUX_SDK_ROOT={Path(sdk).resolve()}", f"-DMCUX_USB_ROOT={Path(usb).resolve()}",
-         f"-DGP100_AUTOSTART_AUDIO={onoff}", f"-DGP100_AUTOSTART_TUNER_CAPTURE={onoff}"])
-    run(["cmake", "--build", build, "--parallel"])
+         f"-DGP100_AUTOSTART_AUDIO={onoff}", f"-DGP100_AUTOSTART_TUNER_CAPTURE={onoff}",
+         f"-DGP100_STOCK_UPDATE_TEMPLATE={template}"])
+    run(["cmake", "--build", build, "--target", "gp100_stock_slot", "--parallel"])
 
-    from gp100mods.opengp100 import slot_packer
-    sys.argv = ["slot_packer", "--slot", str(build / "gp100_base.bin"), "--banks", str(build / "generated" / "factory_banks"),
-                "--stock", str(a.stock_fw), "--out", str(a.out)]
-    slot_packer.main()
+    from gp100mods.opengp100 import finish
+    a.out.write_bytes(finish.finish((build / "OpenGP100-stock-update.bin").read_bytes()))
     if a.register_version:
         import json
         from gp100mods import bundle
-        recipe = patches_dir().parent / "valeton_fills.json"          # how to restore Valeton's regions at generation time
+        recipe = firmware_dir() / "valeton_fills.json"          # how to restore Valeton's regions at generation time
         fw = bundle.add_firmware(a.out, label=a.register_label, version=a.register_version, notes=a.register_notes,
                                  directory=a.register_dir, fills_spec=json.loads(recipe.read_text())["fills"])
         print(f"registered {fw.id} in {fw.path.parent} ({len(fw.fills)} Valeton region(s) blanked)")

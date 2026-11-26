@@ -1,4 +1,4 @@
-/* Host test for patch 0005: the finer MASTER curve. Build against the patched OpenGP100 tree (see tests/test_firmware_parser.py). */
+/* Host test: the finer MASTER curve. Build against the OpenGP100 tree in firmware/opengp100 (see tests/test_firmware_parser.py). */
 #include "audio/engine/audio_output.h"
 
 #include <math.h>

@@ -34,7 +34,10 @@ def test_add_and_load(store, update_file):
     loaded = bundle.load_manifest(d)
     assert [f.id for f in loaded] == [fw.id] and loaded[0].load() == fw.path.read_bytes()
     assert bundle.latest(loaded).id == fw.id
-    assert loaded[0].load() == U.section0_of(update_file.read_bytes())          # only section 0 is stored
+    sec0 = U.section0_of(update_file.read_bytes())
+    stored = loaded[0].load()
+    assert sec0.startswith(stored) and set(sec0[len(stored):]) == {0xFF}        # only section 0 is stored, without its erased tail
+    assert len(stored) == U.AREA_REL + 0x20                                     # i.e. up to the end of the empty animation header
 
 
 def test_bundle_holds_no_valeton_sections(store, update_file):

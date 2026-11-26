@@ -1,4 +1,4 @@
-/* Host test for patch 0004: every record in a GPPR block written by gp100mods.presets must be accepted by the firmware's own parser and
+/* Host test: every record in a GPPR block written by gp100mods.presets must be accepted by the firmware's own parser and
  * pass OpenGP100's native-preset validation (blocks, CPU/memory budget, CRC).
  * Build: gcc -I<every dir under fw/sources> test_factory_presets.c <fw>/sources/app/factory_presets.c libgp100_core.a -lm
  * Usage: ./a.out block.bin -> "count N" then one line per slot: "slot I ok <blocks>" or "slot I rejected" */

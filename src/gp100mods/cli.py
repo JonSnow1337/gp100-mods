@@ -6,7 +6,7 @@ COMMANDS = {
     "info":            ("gp100mods.frmw",                    "inspect and verify an update file"),
     "firmware-add":    ("gp100mods.bundle",                  "add a firmware version to the app bundle"),
     "opengp100-build": ("gp100mods.opengp100.build",         "build OpenGP100 as an update file for the GP-100 app"),
-    "opengp100-pack":  ("gp100mods.opengp100.slot_packer",   "wrap a slot image into an update file"),
+    "opengp100-finish":("gp100mods.opengp100.finish",         "add the app's reserved areas to OpenGP100's own update file"),
     "bootloader-sim":  ("gp100mods.opengp100.bootloader_sim", "simulate the vendor bootloader on an update file"),
 }
 

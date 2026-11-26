@@ -17,7 +17,7 @@ The bundled firmware (committed to this repository) stores the last two blank; `
 hard-coded hash. The repository, bundle and packaged app were byte-scanned for these blocks (none found). Valeton's bootloader
 and updater are never shipped. (An earlier version of this file wrongly said section 0 held no Valeton data.)
 
-**OpenGP100** is the work of Aleksey Khristolyubov (Reddit: Natural-Mechanic7484) (thank you), included in `firmware/opengp100/upstream/` with his written permission (see
+**OpenGP100** is the work of Aleksey Khristolyubov (Reddit: Natural-Mechanic7484) (thank you), included in `firmware/opengp100/sources/` with his written permission (see
 `UPSTREAM.md` there; his cabinet/drum WAVs and pattern table are left out).
 
 **Committed:** the current compiled OpenGP100 build, `src/gp100mods/data/firmware/*.sec0` (only one version is kept), so the

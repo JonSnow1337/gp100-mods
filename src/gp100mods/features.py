@@ -1,4 +1,4 @@
-"""Build-time feature flags stored in a small reserved block of the firmware (see ui/app/feature_flags.h in patch 0003).
+"""Build-time feature flags stored in a small reserved block of the firmware (see app/feature_flags.h in the firmware).
 
 Layout (little-endian) at flash 0x1CBF00 = section-0 offset 0x14BF00: "GPFL", u16 version=1, u16 size=0x40, u32 flags, u32 ~flags,
 then 0xFF. The complement makes a damaged or erased block read as "no flags". The app switches features on by writing the block.
@@ -13,7 +13,7 @@ SLOT_BASE = 0x80000
 REL = FLASH_OFFSET - SLOT_BASE                  # offset inside section 0
 
 STARTER_PRESET = 1 << 0                         # offer the built-in "Starter" preset in slot P01 while it is empty
-FINE_MASTER_VOLUME = 1 << 1                     # finer steps at the quiet end of MASTER (patch 0005)
+FINE_MASTER_VOLUME = 1 << 1                     # finer steps at the quiet end of MASTER  (audio_output.c)
 
 
 def build_block(flags: int) -> bytes:
@@ -40,10 +40,10 @@ def supports(section0: bytes) -> bool:
 
 
 def supports_presets(section0: bytes) -> bool:
-    """True if this OpenGP100 build can show factory presets from the update file (patch 0004 adds this marker string)."""
+    """True if this OpenGP100 build can show factory presets from the update file (app/factory_presets.c carries this marker string)."""
     return b"GP100-FACTORY-PRESETS-1" in section0[:REL]
 
 
 def supports_fine_master(section0: bytes) -> bool:
-    """True if this OpenGP100 build has the fine-MASTER switch (patch 0005 adds this marker string)."""
+    """True if this OpenGP100 build has the fine-MASTER switch (audio_output.c carries this marker string)."""
     return b"GP100-FINE-MASTER-1" in section0[:REL]
