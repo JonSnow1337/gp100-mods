@@ -52,7 +52,10 @@ add_library(gp100_core STATIC
     audio/effects/effect_runtime.c
     ui/screens/edit_screen.c
     ui/screens/effect_picker.c
+    ui/screens/guide_screen.c
     ui/render/effect_art.c
+    ui/render/mode_chip.c
+    ui/render/knob_ui.c
     ui/screens/patch_editor.c
     storage/expression_calibration_record.c
     input/expression_event.c

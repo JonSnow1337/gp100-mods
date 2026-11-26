@@ -104,6 +104,10 @@ static uint32_t s_tunerSignalWindowSequence;
 static bool s_tunerSignalPresent;
 static uint16_t s_hardwareTestPedalValue;
 static uint32_t s_hardwareTestTickMs;
+/* Effect preview debounce: the picker loads the highlighted effect once the PARA knob has been still. */
+static bool s_previewWaiting;
+static uint32_t s_previewDeadlineMs;
+#define GP100_PREVIEW_DEBOUNCE_MS 140u
 static gp100_settings_writer_t s_settingsWriter;
 static gp100_settings_record_t s_settingsToSave;
 static bool s_audioRhythmEnabled;
@@ -650,6 +654,8 @@ bool GP100_ApplicationInitialize(void)
     {
         return false;
     }
+    s_runtime.ui.patch_editor.live_preview = !gp100_feature_enabled(GP100_FEATURE_NO_LIVE_PREVIEW);
+    s_previewWaiting = false;
     if (settingsRepairs != GP100_SETTINGS_REPAIR_NONE)
     {
         s_runtime.settings_dirty = true;
@@ -1411,6 +1417,13 @@ static bool GP100_ApplicationSyncAudio(bool presetRecalled, bool presetEdited)
     return synced;
 }
 
+static bool GP100_ApplicationPreviewPending(void)
+{
+    return (s_runtime.ui.mode == GP100_UI_MODE_EDIT || s_runtime.ui.mode == GP100_UI_MODE_CONSTRUCT) &&
+           s_runtime.ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT &&
+           s_runtime.ui.patch_editor.preview_pending;
+}
+
 static bool GP100_ApplicationHandleEvent(const gp100_event_t *event)
 {
     gp100_firmware_runtime_result_t result;
@@ -1474,6 +1487,11 @@ static bool GP100_ApplicationHandleEvent(const gp100_event_t *event)
         s_status.display_initialized)
     {
         (void)GP100_ApplicationRender();
+    }
+    s_previewWaiting = GP100_ApplicationPreviewPending();
+    if (s_previewWaiting)
+    {
+        s_previewDeadlineMs = g_gp100_board_state.milliseconds + GP100_PREVIEW_DEBOUNCE_MS;
     }
     return true;
 }
@@ -1794,6 +1812,18 @@ bool GP100_ApplicationService(void)
             sawEvent = true;
             ++s_status.expression_events;
             (void)GP100_ApplicationHandleEvent(&event);
+        }
+    }
+    if (s_previewWaiting &&
+        (uint32_t)(g_gp100_board_state.milliseconds - s_previewDeadlineMs) < UINT32_C(0x80000000))
+    {
+        const gp100_event_t tick = {.code = GP100_UI_TICK_EVENT_CODE};
+
+        s_previewWaiting = false;
+        if (GP100_ApplicationPreviewPending())
+        {
+            sawEvent = true;
+            (void)GP100_ApplicationHandleEvent(&tick);
         }
     }
     if (s_runtime.ui.mode == GP100_UI_MODE_HARDWARE_TEST &&

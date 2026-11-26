@@ -14,3 +14,12 @@ def test_supports_fine_master_needs_the_marker_before_the_flag_block():
     sec0 = bytearray(features.REL + 64)
     sec0[100:100 + 19] = b"GP100-FINE-MASTER-1"
     assert features.supports_fine_master(bytes(sec0))
+
+
+def test_live_preview_switch_is_its_own_bit_and_needs_the_marker():
+    assert features.NO_LIVE_PREVIEW not in (features.STARTER_PRESET, features.FINE_MASTER_VOLUME)
+    assert features.parse_block(features.build_block(features.NO_LIVE_PREVIEW)) == features.NO_LIVE_PREVIEW
+    assert not features.supports_live_preview_switch(bytes(features.REL + 64))
+    sec0 = bytearray(features.REL + 64)
+    sec0[100:100 + 20] = b"GP100-LIVE-PREVIEW-1"
+    assert features.supports_live_preview_switch(bytes(sec0))

@@ -443,6 +443,14 @@ class OpenGP100Page(BasePage):
         self.options_card.body.addWidget(self.fine_master)
         self.options_card.body.addWidget(self.fine_master_note)
 
+        self.live_preview = QCheckBox("Hear effects while browsing the effect list (live preview)")
+        self.live_preview.setChecked(True)
+        self.live_preview_note = label("When you scroll through effects on the pedal, the highlighted one plays right away; EXIT puts the "
+                                       "old one back. Untick if you do not want sound changes (or a small click) while scrolling: "
+                                       "then an effect only loads when you press PARA.", role="small")
+        self.options_card.body.addWidget(self.live_preview)
+        self.options_card.body.addWidget(self.live_preview_note)
+
         self.new_drums = QCheckBox("New drum sounds")
         self.new_drums.setChecked(True)
         self.new_drums_note = label("A new set of drum sounds (CrocellKit); the rhythms stay Valeton's. Untick to keep the original "
@@ -498,13 +506,16 @@ class OpenGP100Page(BasePage):
         self.new_drums.setEnabled(has_drums)
         self.new_drums.setVisible(has_drums)
         self.new_drums_note.setVisible(has_drums)
-        while self.options_card.body.count() > 4:           # keep the fixed checkboxes (fine MASTER, new drums) and their notes
-            it = self.options_card.body.takeAt(4)
+        while self.options_card.body.count() > 6:           # keep the fixed checkboxes (fine MASTER, live preview, new drums) and their notes
+            it = self.options_card.body.takeAt(6)
             if it.widget():
                 it.widget().deleteLater()
         has_fine = features.supports_fine_master(fw.load())
         self.fine_master.setVisible(has_fine)
         self.fine_master_note.setVisible(has_fine)
+        has_preview = features.supports_live_preview_switch(fw.load())
+        self.live_preview.setVisible(has_preview)
+        self.live_preview_note.setVisible(has_preview)
         self.feature_boxes = {}
         for ft in fw.features:
             cb = QCheckBox(ft.label)
@@ -513,7 +524,7 @@ class OpenGP100Page(BasePage):
             if ft.description:
                 self.options_card.body.addWidget(label(ft.description, role="small"))
             self.feature_boxes[ft.id] = cb
-        self.options_card.setVisible(bool(fw.features) or has_fine)
+        self.options_card.setVisible(bool(fw.features) or has_fine or has_preview)
         self.presets_card.setVisible(features.supports_presets(fw.load()))
         self.refresh()
 
@@ -583,9 +594,12 @@ class OpenGP100Page(BasePage):
         recs = [p.record for p in self.presets] if features.supports_presets(fw.load()) else ()
         sec0 = fw.load()
         flags = None
-        if features.supports_fine_master(sec0) and features.supports(sec0):
+        if features.supports(sec0):
             flags = features.read(sec0) or 0
-            flags = (flags | features.FINE_MASTER_VOLUME) if self.fine_master.isChecked() else (flags & ~features.FINE_MASTER_VOLUME)
+            if features.supports_fine_master(sec0):
+                flags = (flags | features.FINE_MASTER_VOLUME) if self.fine_master.isChecked() else (flags & ~features.FINE_MASTER_VOLUME)
+            if features.supports_live_preview_switch(sec0):       # the flag turns the preview OFF; it is on unless unticked
+                flags = (flags & ~features.NO_LIVE_PREVIEW) if self.live_preview.isChecked() else (flags | features.NO_LIVE_PREVIEW)
         kit = drums.load_kit() if self.new_drums.isEnabled() and self.new_drums.isChecked() else None
         return update_file.compose(sec0, self.get_parts(), self.media.animation, self.selected_patches(),
                                    flags=flags, fills=fw.fills, presets=recs, drums=kit)

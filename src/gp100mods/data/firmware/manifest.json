@@ -1,12 +1,12 @@
 {
   "firmwares": [
     {
-      "id": "opengp100-0.8",
+      "id": "opengp100-0.3.1",
       "label": "OpenGP100",
-      "version": "0.8",
-      "file": "opengp100-0.8.sec0",
-      "sha256": "0ae1ff1b714425d0f47b4b0c1661cd4edc7b221f7b4cb47818f238393609fe02",
-      "notes": "OpenGP100 c696365: USB audio, new effect catalog; optional finer MASTER volume steps",
+      "version": "0.3.1",
+      "file": "opengp100-0.3.1.sec0",
+      "sha256": "0605c93d504f3146ed4de09b7706acb37d86f6bfb5af51dca7f4833d0a85f22b",
+      "notes": "OpenGP100 c696365 (6 new effects, output limiter) with a reworked pedal UI: knob boxes, one-list effect picker with live preview, mode tags, on-pedal guide",
       "features": [],
       "fills": [
         {

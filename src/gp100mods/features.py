@@ -14,6 +14,7 @@ REL = FLASH_OFFSET - SLOT_BASE                  # offset inside section 0
 
 STARTER_PRESET = 1 << 0                         # offer the built-in "Starter" preset in slot P01 while it is empty
 FINE_MASTER_VOLUME = 1 << 1                     # finer steps at the quiet end of MASTER  (audio_output.c)
+NO_LIVE_PREVIEW = 1 << 2                        # the effect picker does not play the highlighted effect while browsing (feature_flags.c)
 
 
 def build_block(flags: int) -> bytes:
@@ -47,3 +48,8 @@ def supports_presets(section0: bytes) -> bool:
 def supports_fine_master(section0: bytes) -> bool:
     """True if this OpenGP100 build has the fine-MASTER switch (audio_output.c carries this marker string)."""
     return b"GP100-FINE-MASTER-1" in section0[:REL]
+
+
+def supports_live_preview_switch(section0: bytes) -> bool:
+    """True if this OpenGP100 build has the live-preview switch (app/feature_flags.c carries this marker string)."""
+    return b"GP100-LIVE-PREVIEW-1" in section0[:REL]

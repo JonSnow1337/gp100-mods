@@ -39,7 +39,12 @@ bool gp100_preset_runtime_recall(
             !gp100_patch_validate(&next_preset)) {
             return false;
         }
-        next_ui.patch_editor = (gp100_patch_editor_t){0};
+        {
+            /* A new preset ends any picker/preview of the old one; the feature switch stays. */
+            const bool live_preview = next_ui.patch_editor.live_preview;
+            next_ui.patch_editor = (gp100_patch_editor_t){0};
+            next_ui.patch_editor.live_preview = live_preview;
+        }
     } else {
         next_result.repairs = gp100_preset_normalize(&next_preset, catalog);
     }

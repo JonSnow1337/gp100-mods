@@ -66,6 +66,7 @@ typedef enum gp100_settings_field {
     GP100_SETTINGS_TUNER_MODE = 0x10,
     GP100_SETTINGS_LANGUAGE_INDEX = 0x12,
     GP100_SETTINGS_LOOPER_POSITION = 0x14,
+    GP100_SETTINGS_QUICK_REMOVE = 0x16,   /* 0/1: holding EDIT in Signal Chain removes the effect (a free flag word; repaired to 0/1) */
     GP100_SETTINGS_LOOP_RECORD_VOLUME = 0x1a,
     GP100_SETTINGS_LOOP_PLAYBACK_VOLUME = 0x1c,
     GP100_SETTINGS_MASTER_VOLUME = 0x1e,

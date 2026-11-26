@@ -8,6 +8,16 @@ static bool valid_mode(gp100_ui_mode_t mode)
            mode <= GP100_UI_MODE_CONSTRUCT;
 }
 
+/* Leaving a screen drops any open picker, pending preview or undo (the caller reverted a preview). */
+static void reset_editor_state(gp100_patch_editor_t *editor)
+{
+    editor->picker = GP100_PATCH_PICK_NONE;
+    editor->preview_pending = false;
+    editor->preview_applied = false;
+    editor->undo_available = false;
+    editor->edit_held = false;
+}
+
 bool gp100_ui_runtime_set_mode(
     gp100_ui_runtime_t *runtime,
     gp100_ui_mode_t mode,
@@ -35,6 +45,7 @@ bool gp100_ui_runtime_set_mode(
         break;
     case GP100_UI_MODE_EDIT:
         gp100_edit_controller_init(&runtime->edit);
+        reset_editor_state(&runtime->patch_editor);
         runtime->patch_editor.page = 0u;
         runtime->patch_editor.result = GP100_PATCH_OK;
         if (gp100_patch_is_native(preset)) {
@@ -45,7 +56,7 @@ bool gp100_ui_runtime_set_mode(
         }
         break;
     case GP100_UI_MODE_CONSTRUCT:
-        runtime->patch_editor.picker = GP100_PATCH_PICK_NONE;
+        reset_editor_state(&runtime->patch_editor);
         runtime->patch_editor.result = GP100_PATCH_OK;
         break;
     case GP100_UI_MODE_LOOPER:
@@ -118,6 +129,21 @@ static bool enter_mode(
     return true;
 }
 
+/* Holding GLOBAL on a normal screen opens the guide page for that screen. */
+static bool help_requested(const gp100_ui_runtime_t *runtime, const gp100_event_t *event)
+{
+    gp100_ui_control_event_t decoded;
+
+    if (runtime->mode != GP100_UI_MODE_PLAY && runtime->mode != GP100_UI_MODE_EDIT &&
+        runtime->mode != GP100_UI_MODE_CONSTRUCT && runtime->mode != GP100_UI_MODE_DRUM &&
+        runtime->mode != GP100_UI_MODE_LOOPER) {
+        return false;
+    }
+    return gp100_decode_ui_control_event(event, &decoded) &&
+           decoded.kind == GP100_UI_CONTROL_BUTTON &&
+           decoded.control == GP100_BUTTON_GLOBAL && decoded.action == GP100_BUTTON_HOLD;
+}
+
 static bool footswitch_mode(
     const gp100_settings_record_t *settings,
     gp100_footswitch_mode_t *mode)
@@ -151,6 +177,24 @@ bool gp100_ui_runtime_handle_event(
         return false;
     }
     next_mode = runtime->mode;
+    if (help_requested(runtime, event)) {
+        const gp100_ui_mode_t context = runtime->mode;
+        const bool editor_mode = context == GP100_UI_MODE_EDIT || context == GP100_UI_MODE_CONSTRUCT;
+        const bool picker_open = editor_mode &&
+                                 runtime->patch_editor.picker == GP100_PATCH_PICK_EFFECT;
+        const bool reverted = editor_mode && gp100_patch_is_native(preset) &&
+                              gp100_patch_editor_cancel(&runtime->patch_editor, preset);
+
+        if (!enter_mode(runtime, GP100_UI_MODE_GLOBAL, preset, settings, &next_updates)) {
+            return false;
+        }
+        gp100_global_controller_open_guide(&runtime->global, context, picker_open);
+        if (reverted) {
+            next_updates |= GP100_UI_UPDATE_PRESET;
+        }
+        *updates = next_updates;
+        return true;
+    }
     switch (runtime->mode) {
     case GP100_UI_MODE_PLAY: {
         gp100_play_event_result_t result = gp100_play_handle_event(
@@ -276,6 +320,11 @@ bool gp100_ui_runtime_handle_event(
             next_updates |= GP100_UI_UPDATE_FACTORY_RESET;
         if (result == GP100_GLOBAL_EVENT_CALIBRATION_COMMIT)
             next_updates |= GP100_UI_UPDATE_CALIBRATION_COMMIT;
+        if (runtime->global.guide_return_pending) {
+            /* The guide was opened by holding GLOBAL: EXIT goes back to that screen. */
+            next_mode = runtime->global.guide_return;
+            runtime->global.guide_return_pending = false;
+        }
         if (result != GP100_GLOBAL_EVENT_UNHANDLED)
             next_updates |= GP100_UI_UPDATE_REDRAW;
         break;

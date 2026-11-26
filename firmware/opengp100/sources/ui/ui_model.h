@@ -46,7 +46,8 @@ typedef enum gp100_ui_control_kind {
     GP100_UI_CONTROL_EXPRESSION_ACTIVATE,
     GP100_UI_CONTROL_ENCODER,
     GP100_UI_CONTROL_BUTTON,
-    GP100_UI_CONTROL_FOOTSWITCH_PAIR
+    GP100_UI_CONTROL_FOOTSWITCH_PAIR,
+    GP100_UI_CONTROL_TICK
 } gp100_ui_control_kind_t;
 
 typedef struct gp100_ui_control_event {
@@ -83,7 +84,14 @@ const char *gp100_ui_mode_name(gp100_ui_mode_t mode);
 const char *gp100_button_name(gp100_button_id_t button);
 const char *gp100_encoder_name(gp100_encoder_id_t encoder);
 
-/* Decode expression, encoder, button, and footswitch-pair event classes. */
+/*
+ * Synthetic event (class 7) injected by the application when a debounce timer
+ * expires. The editor uses it to start the effect preview after the encoder
+ * has stopped turning. It never comes from the hardware.
+ */
+#define GP100_UI_TICK_EVENT_CODE (UINT32_C(7) << 28)
+
+/* Decode expression, encoder, button, footswitch-pair and tick event classes. */
 bool gp100_decode_ui_control_event(
     const gp100_event_t *event,
     gp100_ui_control_event_t *decoded);

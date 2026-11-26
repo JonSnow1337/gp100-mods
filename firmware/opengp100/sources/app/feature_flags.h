@@ -23,6 +23,8 @@
 
 #define GP100_FEATURE_FINE_MASTER_VOLUME (1u << 1)   /* finer steps at the quiet end of MASTER (see audio_output.h) */
 
+#define GP100_FEATURE_NO_LIVE_PREVIEW    (1u << 2)   /* the effect picker does not play the highlighted effect while browsing */
+
 /* Parse a block. Returns the flags, or 0 if the block is missing or invalid. */
 uint32_t gp100_feature_flags_parse(const uint8_t *block, size_t bytes);
 

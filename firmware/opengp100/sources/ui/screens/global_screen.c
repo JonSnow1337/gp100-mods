@@ -1,6 +1,8 @@
 #include "global_screen.h"
 
 #include "audio/effects/dynamics/output_limiter.h"
+#include "guide_screen.h"
+#include "ui/render/knob_ui.h"
 #include "ui/ui_palette.h"
 
 #include <string.h>
@@ -15,12 +17,11 @@ static const char *const menu_names[GP100_GLOBAL_MENU_ITEMS] = {
     "Output Limiter",
     "Language",
     "Factory Reset",
+    "Editing",
+    "Guide",
     "About"
 };
 
-static const int32_t control_center[GP100_GLOBAL_CONTROL_SLOTS] = {
-    27, 80, 133
-};
 
 static const struct limiter_control {
     const char *label;
@@ -28,7 +29,7 @@ static const struct limiter_control {
     int16_t minimum;
     int16_t maximum;
 } limiter_controls[GP100_GLOBAL_CONTROL_SLOTS] = {
-    {"Threshold", GP100_SETTINGS_LIMITER_THRESHOLD_DB,
+    {"Thresh", GP100_SETTINGS_LIMITER_THRESHOLD_DB,
      GP100_LIMITER_MIN_THRESHOLD_DB, GP100_LIMITER_MAX_THRESHOLD_DB},
     {"Ceiling", GP100_SETTINGS_LIMITER_CEILING_DB,
      GP100_LIMITER_MIN_CEILING_DB, GP100_LIMITER_MAX_CEILING_DB},
@@ -84,8 +85,13 @@ unsigned gp100_global_controller_factory_page(
         if ((unsigned)controller->menu_item >= GP100_GLOBAL_MENU_ITEMS) {
             return 0u;
         }
-        if (controller->menu_item == GP100_GLOBAL_OUTPUT_LIMITER) {
+        if (controller->menu_item == GP100_GLOBAL_OUTPUT_LIMITER ||
+            controller->menu_item == GP100_GLOBAL_EDITING ||
+            controller->menu_item == GP100_GLOBAL_GUIDE) {
             return 0u;
+        }
+        if (controller->menu_item == GP100_GLOBAL_ABOUT) {
+            return 9u;
         }
         return (unsigned)controller->menu_item +
                (controller->menu_item < GP100_GLOBAL_OUTPUT_LIMITER ? 1u : 0u);
@@ -101,9 +107,26 @@ unsigned gp100_global_controller_factory_page(
         return 15u;
     case GP100_GLOBAL_VIEW_EXPRESSION_CALIBRATION:
         return 16u;
+    case GP100_GLOBAL_VIEW_GUIDE:
+        return 0u;
     default:
         return 0u;
     }
+}
+
+void gp100_global_controller_open_guide(
+    gp100_global_controller_t *controller,
+    gp100_ui_mode_t context,
+    bool picker_open)
+{
+    if (controller == NULL) {
+        return;
+    }
+    gp100_global_controller_init(controller);
+    controller->view = GP100_GLOBAL_VIEW_GUIDE;
+    controller->menu_item = GP100_GLOBAL_GUIDE;
+    controller->guide_page = gp100_guide_page_for_mode(context, picker_open);
+    controller->guide_return = context;
 }
 
 gp100_global_navigation_result_t gp100_global_controller_move(
@@ -125,6 +148,14 @@ gp100_global_navigation_result_t gp100_global_controller_move(
         controller->menu_item = (gp100_global_menu_item_t)(
             forward ? item + 1u : item - 1u);
         controller->page_index = 0u;
+        return GP100_GLOBAL_NAVIGATION_UPDATED;
+    }
+    if (controller->view == GP100_GLOBAL_VIEW_GUIDE) {
+        const size_t page = controller->guide_page;
+        if ((forward && page + 1u >= GP100_GUIDE_PAGE_COUNT) || (!forward && page == 0u)) {
+            return GP100_GLOBAL_NAVIGATION_UNCHANGED;
+        }
+        controller->guide_page = forward ? page + 1u : page - 1u;
         return GP100_GLOBAL_NAVIGATION_UPDATED;
     }
     if (controller->view == GP100_GLOBAL_VIEW_EXPRESSION) {
@@ -172,9 +203,18 @@ gp100_global_navigation_result_t gp100_global_controller_activate(
             controller->view = GP100_GLOBAL_VIEW_FACTORY_RESET;
             gp100_factory_reset_init(&controller->factory_reset);
             return GP100_GLOBAL_NAVIGATION_UPDATED;
+        case GP100_GLOBAL_GUIDE:
+            controller->view = GP100_GLOBAL_VIEW_GUIDE;
+            controller->guide_page = 0u;
+            controller->guide_return = (gp100_ui_mode_t)0;
+            return GP100_GLOBAL_NAVIGATION_UPDATED;
         default:
             return GP100_GLOBAL_NAVIGATION_UNCHANGED;
         }
+    }
+    if (controller->view == GP100_GLOBAL_VIEW_GUIDE) {
+        controller->guide_page = (controller->guide_page + 1u) % GP100_GUIDE_PAGE_COUNT;
+        return GP100_GLOBAL_NAVIGATION_UPDATED;
     }
     if (controller->view == GP100_GLOBAL_VIEW_EXPRESSION) {
         if ((unsigned)controller->expression_item >=
@@ -220,6 +260,12 @@ gp100_global_navigation_result_t gp100_global_controller_exit(
     case GP100_GLOBAL_VIEW_EXPRESSION_CALIBRATION:
         controller->view = GP100_GLOBAL_VIEW_EXPRESSION;
         controller->expression_item = GP100_EXPRESSION_CALIBRATE;
+        return GP100_GLOBAL_NAVIGATION_UPDATED;
+    case GP100_GLOBAL_VIEW_GUIDE:
+        controller->view = GP100_GLOBAL_VIEW_MENU;
+        controller->menu_item = GP100_GLOBAL_GUIDE;
+        controller->page_index = 0u;
+        controller->guide_return_pending = controller->guide_return != (gp100_ui_mode_t)0;
         return GP100_GLOBAL_NAVIGATION_UPDATED;
     default:
         return GP100_GLOBAL_NAVIGATION_INVALID;
@@ -341,6 +387,13 @@ bool gp100_global_adjust_panel_setting(
         }
         adjusted = set_boolean_setting(
             settings, GP100_SETTINGS_FOOTSWITCH_MODE, increase);
+        break;
+    case GP100_GLOBAL_EDITING:
+        if (page_index != 0u || control != 1u) {
+            return false;
+        }
+        adjusted = set_boolean_setting(
+            settings, GP100_SETTINGS_QUICK_REMOVE, increase);
         break;
     default:
         return false;
@@ -770,6 +823,16 @@ gp100_global_event_result_t gp100_global_controller_handle_event(
             }
             return GP100_GLOBAL_EVENT_SETTINGS_CHANGED;
         }
+        if (controller->view == GP100_GLOBAL_VIEW_MENU &&
+            controller->menu_item == GP100_GLOBAL_EDITING) {
+            int16_t enabled;
+            if (!gp100_settings_get_i16(settings, GP100_SETTINGS_QUICK_REMOVE, &enabled) ||
+                !gp100_global_adjust_panel_setting(settings, GP100_GLOBAL_EDITING, 0u, 1u,
+                                                   enabled == 0)) {
+                return GP100_GLOBAL_EVENT_INVALID;
+            }
+            return GP100_GLOBAL_EVENT_SETTINGS_CHANGED;
+        }
         navigation = gp100_global_controller_activate(controller);
     } else if (decoded.control == GP100_BUTTON_EXIT) {
         navigation = gp100_global_controller_exit(controller);
@@ -932,12 +995,12 @@ static bool fill_io(gp100_global_screen_snapshot_t *snapshot,
         return false;
     }
     format_db(value, sizeof(value), input);
-    return set_control(&snapshot->controls[0], "Input\nLevel", value,
+    return set_control(&snapshot->controls[0], "Input", value,
                        (float)input, -20.0f, 20.0f) &&
-           set_control(&snapshot->controls[1], "No CAB\nMode(L)",
+           set_control(&snapshot->controls[1], "NoCab L",
                        left != 0 ? "ON" : "OFF", (float)(left != 0),
                        0.0f, 1.0f) &&
-           set_control(&snapshot->controls[2], "No CAB\nMode(R)",
+           set_control(&snapshot->controls[2], "NoCab R",
                        right != 0 ? "ON" : "OFF", (float)(right != 0),
                        0.0f, 1.0f);
 }
@@ -986,17 +1049,17 @@ static bool fill_usb(gp100_global_screen_snapshot_t *snapshot,
         return false;
     }
     if (snapshot->page_index == 1u) {
-        return set_control(&snapshot->controls[0], "RecMode\n(R)",
+        return set_control(&snapshot->controls[0], "Rec R",
                            right == 0 ? "DRY" : "EFFECT",
                            (float)(right != 0), 0.0f, 1.0f);
     }
     format_db(record_text, sizeof(record_text), record_level);
     format_db(monitor_text, sizeof(monitor_text), monitor_level);
-    return set_control(&snapshot->controls[0], "Rec\nLevel", record_text,
+    return set_control(&snapshot->controls[0], "Rec Lvl", record_text,
                        (float)record_level, -20.0f, 20.0f) &&
-           set_control(&snapshot->controls[1], "Monitor\nLevel", monitor_text,
+           set_control(&snapshot->controls[1], "Monitor", monitor_text,
                        (float)monitor_level, -20.0f, 6.0f) &&
-           set_control(&snapshot->controls[2], "RecMode\n(L)",
+           set_control(&snapshot->controls[2], "Rec L",
                        left == 0 ? "DRY" : "EFFECT",
                        (float)(left != 0), 0.0f, 1.0f);
 }
@@ -1151,6 +1214,15 @@ bool gp100_global_screen_snapshot_from_settings(
     case GP100_GLOBAL_FACTORY_RESET:
         (void)copy_text(next.detail, sizeof(next.detail), "Enter Setting");
         break;
+    case GP100_GLOBAL_EDITING:
+        if (!read_setting(settings, GP100_SETTINGS_QUICK_REMOVE, &value) ||
+            !set_control(&next.controls[1], "Hold EDIT",
+                         value == 1 ? "REMOVE" : "OFF",
+                         (float)value, 0.0f, 1.0f)) return false;
+        break;
+    case GP100_GLOBAL_GUIDE:
+        (void)copy_text(next.detail, sizeof(next.detail), "Press PARA");
+        break;
     case GP100_GLOBAL_ABOUT:
         (void)copy_text(next.detail, sizeof(next.detail),
                         firmware_version != NULL ? firmware_version : "2.1.0");
@@ -1289,18 +1361,17 @@ bool gp100_global_screen_render(
                    theme->foreground_rgb565, theme->panel_rgb565)) {
         return false;
     }
+    /* Knob columns: left = Quick 1, middle = Quick 2, right = Quick 3. */
     for (row = 0u; row < GP100_GLOBAL_CONTROL_SLOTS; ++row) {
         const gp100_global_control_t *control = &snapshot->controls[row];
+        const gp100_knob_style_t style = {
+            theme->small_font, theme->value_rgb565, theme->foreground_rgb565,
+            theme->selected_rgb565, theme->selected_rgb565, theme->track_rgb565
+        };
         if (!control->present) {
             continue;
         }
-        if (!draw_text(canvas, theme->small_font, control_center[row], limiter ? 94 : 86,
-                       control->label, GP100_TEXT_ALIGN_CENTER,
-                       theme->foreground_rgb565, theme->panel_rgb565) ||
-            !draw_text(canvas, limiter ? theme->small_font : theme->regular_font,
-                       control_center[row], 111,
-                       control->value, GP100_TEXT_ALIGN_CENTER,
-                       theme->selected_rgb565, theme->value_rgb565)) {
+        if (!gp100_knob_box_draw(canvas, &style, row, control->label, control->value, -1.0f)) {
             return false;
         }
     }

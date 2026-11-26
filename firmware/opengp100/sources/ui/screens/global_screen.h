@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define GP100_GLOBAL_MENU_ITEMS 10u
+#define GP100_GLOBAL_MENU_ITEMS 12u
 #define GP100_GLOBAL_VISIBLE_ITEMS 3u
 #define GP100_GLOBAL_CONTROL_SLOTS 3u
 
@@ -32,6 +32,8 @@ typedef enum gp100_global_menu_item {
     GP100_GLOBAL_OUTPUT_LIMITER,
     GP100_GLOBAL_LANGUAGE,
     GP100_GLOBAL_FACTORY_RESET,
+    GP100_GLOBAL_EDITING,
+    GP100_GLOBAL_GUIDE,
     GP100_GLOBAL_ABOUT
 } gp100_global_menu_item_t;
 
@@ -40,7 +42,8 @@ typedef enum gp100_global_view {
     GP100_GLOBAL_VIEW_EXPRESSION,
     GP100_GLOBAL_VIEW_LANGUAGE,
     GP100_GLOBAL_VIEW_FACTORY_RESET,
-    GP100_GLOBAL_VIEW_EXPRESSION_CALIBRATION
+    GP100_GLOBAL_VIEW_EXPRESSION_CALIBRATION,
+    GP100_GLOBAL_VIEW_GUIDE
 } gp100_global_view_t;
 
 typedef enum gp100_global_navigation_result {
@@ -72,6 +75,9 @@ typedef struct gp100_global_controller {
     gp100_expression_calibration_t expression_calibration;
     uint16_t calibration_raw;
     uint16_t calibration_peak;
+    size_t guide_page;
+    gp100_ui_mode_t guide_return;      /* mode to go back to when the guide was opened by holding GLOBAL (0 = none) */
+    bool guide_return_pending;         /* set by EXIT in that case; the UI runtime performs the mode change */
 } gp100_global_controller_t;
 
 typedef struct gp100_global_control {
@@ -118,6 +124,12 @@ void gp100_global_controller_init(
  */
 unsigned gp100_global_controller_factory_page(
     const gp100_global_controller_t *controller);
+
+/* Open the guide at the page that explains `context` (called when GLOBAL is held on another screen). */
+void gp100_global_controller_open_guide(
+    gp100_global_controller_t *controller,
+    gp100_ui_mode_t context,
+    bool picker_open);
 
 /* Apply one positive/negative PARA-encoder step with factory clamping. */
 gp100_global_navigation_result_t gp100_global_controller_move(

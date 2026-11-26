@@ -299,6 +299,12 @@ bool gp100_firmware_runtime_handle_event(
     memset(&next_result, 0, sizeof(next_result));
     was_preset_modified = runtime->preset_modified;
     was_settings_dirty = runtime->settings_dirty;
+    /* Remember whether the preset was modified before a picker/removal starts, so that cancelling
+     * or undoing it can bring the "modified" marker back to that state. */
+    if (runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE &&
+        !runtime->ui.patch_editor.undo_available) {
+        runtime->ui.patch_editor.modified_snapshot = runtime->preset_modified;
+    }
     if (!gp100_ui_live_handle_event_and_recall(
             &runtime->ui, &runtime->preset, &runtime->settings,
             &runtime->looper, &runtime->chain, &runtime->effects,
@@ -316,6 +322,10 @@ bool gp100_firmware_runtime_handle_event(
     }
     if ((next_result.live.ui_updates & GP100_UI_UPDATE_PRESET) != 0u) {
         runtime->preset_modified = !next_result.live.preset_loaded;
+    }
+    if (runtime->ui.patch_editor.restore_clean) {
+        runtime->ui.patch_editor.restore_clean = false;
+        runtime->preset_modified = runtime->ui.patch_editor.modified_snapshot;
     }
     if (next_result.live.preset_loaded) {
         runtime->preset_modified = false;

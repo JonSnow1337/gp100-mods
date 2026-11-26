@@ -125,6 +125,10 @@ bool gp100_decode_ui_control_event(
         decoded->kind = GP100_UI_CONTROL_FOOTSWITCH_PAIR;
         return true;
     }
+    if (event_class == 7u && control == 0u) {
+        decoded->kind = GP100_UI_CONTROL_TICK;
+        return true;
+    }
     return false;
 }
 

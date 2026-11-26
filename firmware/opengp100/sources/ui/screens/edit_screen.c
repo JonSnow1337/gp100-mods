@@ -1,5 +1,8 @@
 #include "edit_screen.h"
 
+#include "ui/render/knob_ui.h"
+#include "ui/render/mode_chip.h"
+
 #include "ui/render/effect_art.h"
 #include "ui/ui_palette.h"
 #include "storage/patch_chain.h"
@@ -850,17 +853,59 @@ const char *gp100_edit_screen_model_name(gp100_effect_family_t family,
     return user_name;
 }
 
+static void format_page_label(char output[16], size_t page, size_t total)
+{
+    char number[8];
+
+    format_page(number, page, total);
+    memcpy(output, "PAGE ", 5u);
+    memcpy(output + 5, number, strlen(number) + 1u);
+}
+
+static uint16_t accent_color(const gp100_edit_screen_snapshot_t *snapshot,
+                             const gp100_edit_screen_theme_t *theme)
+{
+    return snapshot->accent_rgb565 != 0u ? snapshot->accent_rgb565
+                                         : theme->selected_rgb565;
+}
+
 static bool render_header(gp100_display_canvas_t *canvas,
                           const gp100_edit_screen_snapshot_t *snapshot,
                           const gp100_edit_screen_theme_t *theme)
 {
     char code[4];
-    char page[8];
+    char page[16];
 
     if (!gp100_play_screen_patch_code(snapshot->logical_preset, code)) {
         return false;
     }
-    format_page(page, snapshot->page_index, snapshot->page_count);
+    if (snapshot->native_chain) {
+        /* Mode name on a colored chip, page counter underneath (only for multi-page effects). */
+        format_page_label(page, snapshot->page_index, snapshot->page_count);
+        if (snapshot->mode_label != NULL &&
+            !gp100_mode_chip_draw(canvas, theme->small_font, snapshot->mode_label,
+                                  accent_color(snapshot, theme), theme->background_rgb565,
+                                  158, 1)) {
+            return false;
+        }
+        if (snapshot->page_count > 1u &&
+            !draw_text(canvas, theme->small_font, 157, 15, page,
+                       GP100_TEXT_ALIGN_RIGHT,
+                       theme->foreground_rgb565, theme->background_rgb565)) {
+            return false;
+        }
+    } else {
+        format_page(page, snapshot->page_index, snapshot->page_count);
+        if (!draw_text(canvas, theme->small_font, 157, 4, page,
+                       GP100_TEXT_ALIGN_RIGHT,
+                       theme->foreground_rgb565, theme->background_rgb565) ||
+            (snapshot->mode_label != NULL &&
+             !draw_text(canvas, theme->small_font, 157, 19, snapshot->mode_label,
+                        GP100_TEXT_ALIGN_RIGHT, theme->selected_rgb565,
+                        theme->background_rgb565))) {
+            return false;
+        }
+    }
     return draw_text(canvas, theme->large_font, 2, 1, code,
                      GP100_TEXT_ALIGN_LEFT,
                      theme->foreground_rgb565, theme->background_rgb565) &&
@@ -871,13 +916,6 @@ static bool render_header(gp100_display_canvas_t *canvas,
             draw_text(canvas, theme->regular_font, 50, 1, "*",
                       GP100_TEXT_ALIGN_LEFT,
                       theme->foreground_rgb565,
-                      theme->background_rgb565)) &&
-           draw_text(canvas, theme->small_font, 157, 4, page,
-                     GP100_TEXT_ALIGN_RIGHT,
-                     theme->foreground_rgb565, theme->background_rgb565) &&
-           (snapshot->mode_label == NULL ||
-            draw_text(canvas, theme->small_font, 157, 19, snapshot->mode_label,
-                      GP100_TEXT_ALIGN_RIGHT, theme->selected_rgb565,
                       theme->background_rgb565)) &&
            (snapshot->selection_label == NULL ||
             draw_fitted_text(canvas, theme->small_font, 80, 28,
@@ -1060,6 +1098,11 @@ static bool render_parameter_panel(
     (void)gp100_display_fill_rect(
         canvas, 0, kPanelY, GP100_UI_LOGICAL_WIDTH, kPanelHeight,
         theme->panel_rgb565);
+    if (snapshot->native_chain) {
+        (void)gp100_display_fill_rect(
+            canvas, 0, kPanelY, GP100_UI_LOGICAL_WIDTH, 2u,
+            accent_color(snapshot, theme));
+    }
     if (snapshot->menu_items != NULL) {
         for (size_t item = 0; item < snapshot->menu_count; ++item) {
             const int32_t spacing = snapshot->menu_count > 3u ? 8 : 10;
@@ -1109,6 +1152,31 @@ static bool render_parameter_panel(
                          GP100_TEXT_ALIGN_CENTER,
                          theme->foreground_rgb565, theme->value_rgb565);
     }
+    if (snapshot->native_chain) {
+        /* Knob columns: left = Quick 1, middle = Quick 2, right = Quick 3. */
+        for (index = 0u; index < GP100_EDIT_PARAMETER_SLOTS; ++index) {
+            const gp100_edit_parameter_slot_t *slot = &snapshot->slots[index];
+            const bool parameter = slot->kind == GP100_EDIT_SLOT_PARAMETER;
+            const gp100_knob_style_t style = {
+                theme->small_font, theme->value_rgb565, theme->foreground_rgb565,
+                parameter ? theme->foreground_rgb565 : accent_color(snapshot, theme),
+                accent_color(snapshot, theme), theme->track_rgb565
+            };
+            float ratio = -1.0f;
+
+            if (!slot->present) {
+                continue;
+            }
+            if (parameter && slot->maximum > slot->minimum) {
+                ratio = (slot->raw_value - slot->minimum) / (slot->maximum - slot->minimum);
+                ratio = ratio < 0.0f ? 0.0f : ratio;
+            }
+            if (!gp100_knob_box_draw(canvas, &style, index, slot->label, slot->value, ratio)) {
+                return false;
+            }
+        }
+        return true;
+    }
     for (index = 0u; index < GP100_EDIT_PARAMETER_SLOTS; ++index) {
         const gp100_edit_parameter_slot_t *slot = &snapshot->slots[index];
         uint16_t value_color;
@@ -1131,6 +1199,25 @@ static bool render_parameter_panel(
         }
     }
     return true;
+}
+
+static bool render_hint(gp100_display_canvas_t *canvas,
+                        const gp100_edit_screen_snapshot_t *snapshot,
+                        const gp100_edit_screen_theme_t *theme)
+{
+    if (snapshot->hint == NULL) {
+        return true;
+    }
+    if (snapshot->native_chain && !snapshot->hint_is_warning) {
+        /* "[PARA] keep [EXIT] cancel": bracketed words are button chips. */
+        return gp100_hint_draw(canvas, theme->small_font, 3, 120, 154u, snapshot->hint,
+                               theme->foreground_rgb565, theme->background_rgb565,
+                               theme->disabled_rgb565, theme->panel_rgb565);
+    }
+    return draw_fitted_text(canvas, theme->small_font, 80, 121, snapshot->hint,
+                            156u, snapshot->hint_is_warning
+                                ? theme->chain_selection_rgb565 : theme->disabled_rgb565,
+                            theme->panel_rgb565);
 }
 
 /* GP100_UI_ASSET_REPLACEMENT: screen composition and widget geometry. */
@@ -1162,9 +1249,5 @@ bool gp100_edit_screen_render(
     return render_header(canvas, snapshot, theme) &&
            render_chain(canvas, snapshot, theme) &&
            render_parameter_panel(canvas, snapshot, theme) &&
-           (snapshot->hint == NULL ||
-            draw_fitted_text(canvas, theme->small_font, 80, 121, snapshot->hint,
-                             156u, snapshot->hint_is_warning
-                                 ? theme->chain_selection_rgb565 : theme->disabled_rgb565,
-                             theme->panel_rgb565));
+           render_hint(canvas, snapshot, theme);
 }

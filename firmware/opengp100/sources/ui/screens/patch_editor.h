@@ -7,15 +7,13 @@
 
 typedef enum gp100_patch_picker {
     GP100_PATCH_PICK_NONE,
-    GP100_PATCH_PICK_GROUP,
-    GP100_PATCH_PICK_EFFECT,
+    GP100_PATCH_PICK_EFFECT,      /* one list of all effects, group shown as a heading */
     GP100_PATCH_PICK_ACTION,
     GP100_PATCH_PICK_EXPRESSION
 } gp100_patch_picker_t;
 
 typedef enum gp100_patch_action {
     GP100_PATCH_ACTION_INSERT,
-    GP100_PATCH_ACTION_REPLACE,
     GP100_PATCH_ACTION_REMOVE,
     GP100_PATCH_ACTION_ASSIGN_EXPRESSION,
     GP100_PATCH_ACTION_COUNT
@@ -29,10 +27,30 @@ typedef struct gp100_patch_editor {
     gp100_patch_picker_t picker;
     gp100_patch_result_t result;
     bool para_held;
+    bool edit_held;
     bool replacing;
     gp100_patch_action_t action;
     gp100_patch_expression_t expression;
+
+    /* Live preview. The picker works on the real preset (so the effect is audible) and keeps the
+     * preset from before it opened in `backup`; EXIT puts it back, PARA keeps the chosen effect. */
+    bool live_preview;            /* set by the application from the feature flag */
+    bool preview_pending;         /* the highlighted effect is not applied yet (debounce) */
+    bool preview_applied;         /* the preset currently differs from `backup` because of the preview */
+    bool preview_muted;           /* Quick 3 in the effect list switched the preview off for this picker */
+    bool undo_available;          /* `backup` holds the preset from before a removal; EXIT restores it */
+    bool restore_clean;           /* runtime: the preset is back to its state before the picker/removal */
+    bool modified_snapshot;       /* runtime: preset_modified before the picker/removal started */
+    gp100_preset_record_t backup;
 } gp100_patch_editor_t;
+
+/* Leave an open picker or pending undo without applying anything (preview is reverted).
+ * Returns true if the preset was changed by the revert. */
+bool gp100_patch_editor_cancel(gp100_patch_editor_t *editor, gp100_preset_record_t *preset);
+
+/* Name of the editor state shown on the mode chip, and its accent color. */
+const char *gp100_patch_editor_mode_label(const gp100_patch_editor_t *editor, gp100_ui_mode_t mode);
+uint16_t gp100_patch_editor_accent(const gp100_patch_editor_t *editor, gp100_ui_mode_t mode);
 
 gp100_edit_event_result_t gp100_patch_editor_handle(
     gp100_patch_editor_t *editor, gp100_ui_mode_t mode,

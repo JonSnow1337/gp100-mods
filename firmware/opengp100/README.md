@@ -16,6 +16,7 @@ git diff b915f23 -- firmware/opengp100/sources
 | starter preset | `app/starter_preset.[ch]`, `app/application.c` | optional built-in "Starter" preset in slot P01 (flag bit 0); the app no longer offers it |
 | factory presets | `app/factory_presets.[ch]`, `app/application.c` | up to 99 presets carried in the update file ("GPPR" block after the boot animation); an empty slot shows its preset until something is saved there |
 | fine master volume | `audio/engine/audio_output.[ch]`, `audio/engine/audio_binding.c` | optional finer MASTER curve (flag bit 1): `gain = p*p*(p+60)/32`, so MASTER 20 is about as loud as the stock 2 and 100 is unchanged. Runs before his output limiter |
+| pedal UI rework | `ui/screens/patch_editor.[ch]`, `effect_picker.c`, `guide_screen.[ch]`, `global_screen.c`, `edit_screen.c`, `ui/render/mode_chip.[ch]`, `ui/ui_runtime.c`, `app/application.c` | one-list effect picker with live preview (debounced by a synthetic tick event, flag bit 2 turns it off), EDIT opens the picker in Edit mode, PARA adds/changes in Signal Chain, EXIT always goes back, mode chips with colors, `PAGE n/m`, quick remove + undo (setting at settings word 0x16, Global > Editing), on-pedal guide (Global > Guide, hold GLOBAL). See [docs/pedal-ui.md](../../docs/pedal-ui.md) |
 | build wiring | `cmake/firmware.cmake` | the four new `.c` files are part of both of his targets |
 
 Slot placement is his: the `gp100_stock_slot` target links into Valeton's bootloader slot and builds the Valeton update package

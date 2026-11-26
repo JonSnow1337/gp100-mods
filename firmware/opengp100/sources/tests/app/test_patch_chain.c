@@ -3,6 +3,10 @@
 #include "audio/dsp/audio_pcm.h"
 #include "audio/effects/effect_processor.h"
 #include "storage/patch_chain.h"
+#include "ui/firmware_renderer.h"
+#include "ui/render/knob_ui.h"
+#include "ui/screens/guide_screen.h"
+#include "ui/ui_palette.h"
 
 #include <assert.h>
 #include <math.h>
@@ -70,15 +74,20 @@ static void test_front_panel(void)
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_HOLD);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     assert(runtime->ui.mode == GP100_UI_MODE_CONSTRUCT);
-    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
-    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_GROUP);
+    /* PARA on the empty "+" slot opens the picker; PARA again adds the highlighted effect. */
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     assert(runtime->chain.count == 1u);
     knob(&fixture, GP100_ENCODER_QUICK_1, true);
     knob(&fixture, GP100_ENCODER_PARA, true);
     assert(runtime->ui.patch_editor.position == 1u);
+    /* PARA on "+" opens the picker, EXIT cancels it and EXIT again goes back to Edit. */
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_CONSTRUCT && runtime->chain.count == 1u);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
     assert(runtime->ui.mode == GP100_UI_MODE_EDIT);
     assert(runtime->ui.patch_editor.position == 0u);
     assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
@@ -87,7 +96,6 @@ static void test_front_panel(void)
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_HOLD);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     knob(&fixture, GP100_ENCODER_PARA, true);
-    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     knob(&fixture, GP100_ENCODER_PARA, true);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
@@ -102,7 +110,7 @@ static void test_front_panel(void)
     assert(runtime->chain.slot_at_position[0] == second.id);
     assert(runtime->chain.slot_at_position[1] == first.id);
 
-    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
     assert(runtime->ui.mode == GP100_UI_MODE_EDIT);
     assert(runtime->ui.patch_editor.position == 0u);
     assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
@@ -118,7 +126,12 @@ static void test_front_panel(void)
     button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
     assert(runtime->ui.mode == GP100_UI_MODE_EDIT);
     const gp100_preset_record_t before = runtime->preset;
+    /* EDIT in Edit mode opens the effect picker on the current effect; EXIT leaves it untouched. */
     button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_EDIT);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
+    assert(runtime->ui.patch_editor.replacing);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
     assert(runtime->ui.mode == GP100_UI_MODE_EDIT);
     assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
     assert(memcmp(&before, &runtime->preset, sizeof(before)) == 0);
@@ -175,23 +188,21 @@ static void test_front_panel(void)
 
     button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
-    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_GROUP);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT && !runtime->ui.patch_editor.replacing);
     button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
     assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
     assert(runtime->chain.count == 2u);
     button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
-    for (size_t i = 0u; i < 3u; ++i) {
+    for (size_t i = 0u; i < 2u; ++i) {
         button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     }
     assert(runtime->chain.count == 3u);
     assert(runtime->chain.slot_at_position[1] == second.id);
     const uint8_t inserted = runtime->chain.slot_at_position[0];
 
-    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
-    knob(&fixture, GP100_ENCODER_PARA, true);
-    assert(runtime->ui.patch_editor.action == GP100_PATCH_ACTION_REPLACE);
+    /* PARA on an effect changes it (no separate Replace menu entry any more). */
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
-    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT && runtime->ui.patch_editor.replacing);
     knob(&fixture, GP100_ENCODER_PARA, true);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     assert(runtime->chain.count == 3u);
@@ -228,7 +239,8 @@ static void test_native_render(void)
                                      false, &canvas, &theme));
     assert(pixels[36u * 160u + 1u] == theme.chain_selection_rgb565);
     assert(pixels[52u * 160u + 19u] == theme.selected_rgb565);
-    assert(pixels[86u * 160u] == theme.panel_rgb565);
+    assert(pixels[86u * 160u] == gp100_patch_editor_accent(&editor, GP100_UI_MODE_CONSTRUCT));   /* mode accent line */
+    assert(pixels[90u * 160u] == theme.panel_rgb565);
 
     assert(gp100_patch_insert(&preset, 0u, GP100_EFFECT_PRE_FX, 0u) == GP100_PATCH_OK);
     assert(gp100_patch_insert(&preset, 1u, GP100_EFFECT_PRE_FX, 6u) == GP100_PATCH_OK);
@@ -249,7 +261,7 @@ static void test_native_render(void)
     assert(gp100_patch_editor_render(&editor, GP100_UI_MODE_CONSTRUCT, &preset, 0u,
                                      true, &canvas, &theme));
     assert(pixels[104u * 160u + 3u] == theme.value_rgb565);
-    assert(pixels[98u * 160u + 3u] == theme.panel_rgb565);
+    assert(pixels[96u * 160u + 3u] == theme.panel_rgb565);
 
     editor.position = 2u;
     editor.picker = GP100_PATCH_PICK_EFFECT;
@@ -310,10 +322,11 @@ static void test_picker_cross_family_replace(void)
     button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_HOLD);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
-    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
-    assert(fixture.runtime.ui.patch_editor.group == GP100_EFFECT_GROUP_DYNAMICS);
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
-    knob(&fixture, GP100_ENCODER_PARA, false);
+    assert(fixture.runtime.ui.patch_editor.group == GP100_EFFECT_GROUP_DYNAMICS);
+    for (size_t i = 0u; i < 5u; ++i) {
+        knob(&fixture, GP100_ENCODER_PARA, true);
+    }
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     assert(gp100_patch_block_at(&fixture.runtime.preset, 0u, &block));
     assert(block.family == GP100_EFFECT_NOISE_REDUCTION && block.algorithm == 1u);
@@ -321,12 +334,13 @@ static void test_picker_cross_family_replace(void)
 
     knob(&fixture, GP100_ENCODER_QUICK_2, true);
     assert(fixture.runtime.ui.patch_editor.group == GP100_EFFECT_GROUP_DYNAMICS);
-    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     gp100_picker_effect_t selected;
     assert(gp100_effect_picker_at(fixture.runtime.ui.patch_editor.group,
                                   fixture.runtime.ui.patch_editor.choice, &selected));
     assert(selected.family == GP100_EFFECT_NOISE_REDUCTION && selected.algorithm == 1u);
-    knob(&fixture, GP100_ENCODER_PARA, true);
+    for (size_t i = 0u; i < 5u; ++i) {
+        knob(&fixture, GP100_ENCODER_PARA, false);
+    }
     button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
     assert(gp100_patch_block_at(&fixture.runtime.preset, 0u, &block));
     assert(block.id == original_id && block.family == GP100_EFFECT_PRE_FX && block.algorithm == 0u);
@@ -449,6 +463,453 @@ static void test_limits(void)
     assert(gp100_patch_insert(&preset, 4u, GP100_EFFECT_DISTORTION, 12u) == GP100_PATCH_OK);
     assert(gp100_patch_insert(&preset, 5u, GP100_EFFECT_AMPLIFIER, 0u) == GP100_PATCH_OK);
     assert(gp100_patch_insert(&preset, 6u, GP100_EFFECT_CABINET, 0u) == GP100_PATCH_OK);
+}
+
+
+static void start_runtime(patch_fixture_t *fixture, size_t effects, bool live_preview)
+{
+    static int32_t looper_storage[128];
+    gp100_settings_record_t settings;
+
+    empty_patch(&fixture->slots[0]);
+    empty_patch(&fixture->slots[1]);
+    for (size_t i = 0u; i < effects; ++i) {
+        assert(gp100_patch_insert(&fixture->slots[0], i, GP100_EFFECT_PRE_FX, 0u) == GP100_PATCH_OK);
+    }
+    assert(gp100_make_development_settings(&settings));
+    assert(gp100_firmware_runtime_init(&fixture->runtime, 0u, &fixture->slots[0], &settings,
+                                       looper_storage, 128u, 0u, 239u));
+    fixture->runtime.ui.patch_editor.live_preview = live_preview;
+}
+
+static void tick(patch_fixture_t *fixture)
+{
+    dispatch(fixture, GP100_UI_TICK_EVENT_CODE);
+}
+
+static void hold_para_for_chain(patch_fixture_t *fixture)
+{
+    button(fixture, GP100_BUTTON_PARA, GP100_BUTTON_HOLD);
+    button(fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+}
+
+static void test_live_preview(void)
+{
+    patch_fixture_t fixture = {0};
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+    gp100_patch_block_t block;
+    start_runtime(&fixture, 1u, true);
+    const gp100_preset_record_t original = runtime->preset;
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block));
+    const uint8_t id = block.id;
+
+    /* Changing: turning only moves the highlight; the effect loads when the debounce tick arrives. */
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
+    assert(!runtime->ui.patch_editor.preview_pending);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(runtime->ui.patch_editor.preview_pending);
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) == 0);
+    tick(&fixture);
+    assert(!runtime->ui.patch_editor.preview_pending && runtime->ui.patch_editor.preview_applied);
+    assert(runtime->effects.slots[id].algorithm_index == 1u && runtime->preset_modified);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    tick(&fixture);
+    gp100_picker_effect_t third;
+    assert(gp100_effect_picker_at(GP100_EFFECT_GROUP_DYNAMICS, 2u, &third));
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block));
+    assert(block.id == id && block.family == third.family && block.algorithm == third.algorithm);
+    assert(runtime->effects.slots[id].algorithm_index == third.algorithm);
+    /* EXIT restores the effect, its parameters and the "unmodified" marker. */
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) == 0);
+    assert(runtime->effects.slots[id].algorithm_index == 0u && !runtime->preset_modified);
+
+    /* PARA right after turning (no tick yet) still keeps exactly the highlighted effect. */
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block));
+    assert(block.id == id && block.algorithm == 1u && runtime->preset_modified);
+    tick(&fixture);   /* a late tick is harmless */
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block) && block.algorithm == 1u);
+
+    /* Adding previews an inserted effect and removes it again on EXIT. */
+    const gp100_preset_record_t before_add = runtime->preset;
+    const bool modified_before_add = runtime->preset_modified;
+    hold_para_for_chain(&fixture);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT && !runtime->ui.patch_editor.replacing);
+    assert(runtime->ui.patch_editor.preview_pending);
+    tick(&fixture);
+    assert(runtime->chain.count == 2u);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->chain.count == 1u && memcmp(&runtime->preset, &before_add, sizeof(before_add)) == 0);
+    assert(runtime->preset_modified == modified_before_add);
+    assert(runtime->ui.mode == GP100_UI_MODE_CONSTRUCT);
+
+    /* Without the feature there is no preview: the preset only changes when PARA confirms. */
+    start_runtime(&fixture, 1u, false);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(!runtime->ui.patch_editor.preview_pending);
+    tick(&fixture);
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block) && block.algorithm == 0u);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block) && block.algorithm == 1u);
+
+    /* An expression pedal event does not disturb an open picker. */
+    start_runtime(&fixture, 1u, true);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    tick(&fixture);
+    dispatch(&fixture, GP100_EXPRESSION_ACTIVATE_EVENT_PREFIX | 250u);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
+}
+
+static void test_picker_navigation(void)
+{
+    patch_fixture_t fixture = {0};
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+    start_runtime(&fixture, 1u, false);
+    gp100_patch_editor_t *editor = &runtime->ui.patch_editor;
+
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(editor->group == GP100_EFFECT_GROUP_DYNAMICS && editor->choice == 0u);
+    /* Backwards from the first effect wraps to the last effect of the last group. */
+    knob(&fixture, GP100_ENCODER_PARA, false);
+    assert(editor->group == GP100_EFFECT_GROUP_REVERB &&
+           editor->choice == gp100_effect_picker_count(GP100_EFFECT_GROUP_REVERB) - 1u);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(editor->group == GP100_EFFECT_GROUP_DYNAMICS && editor->choice == 0u);
+    /* Forwards past the end of a group flows into the next one. */
+    for (size_t i = 0u; i < gp100_effect_picker_count(GP100_EFFECT_GROUP_DYNAMICS); ++i) {
+        knob(&fixture, GP100_ENCODER_PARA, true);
+    }
+    assert(editor->group == GP100_EFFECT_GROUP_DRIVE && editor->choice == 0u);
+    knob(&fixture, GP100_ENCODER_PARA, false);
+    assert(editor->group == GP100_EFFECT_GROUP_DYNAMICS &&
+           editor->choice == gp100_effect_picker_count(GP100_EFFECT_GROUP_DYNAMICS) - 1u);
+    /* Q1 jumps whole groups. */
+    knob(&fixture, GP100_ENCODER_QUICK_1, true);
+    assert(editor->group == GP100_EFFECT_GROUP_DRIVE && editor->choice == 0u);
+    knob(&fixture, GP100_ENCODER_QUICK_1, false);
+    knob(&fixture, GP100_ENCODER_QUICK_1, false);
+    assert(editor->group == GP100_EFFECT_GROUP_REVERB);
+    /* Quick knobs other than Q1 do nothing inside the picker. */
+    const gp100_preset_record_t before = runtime->preset;
+    knob(&fixture, GP100_ENCODER_QUICK_2, true);
+    knob(&fixture, GP100_ENCODER_QUICK_3, true);
+    assert(memcmp(&before, &runtime->preset, sizeof(before)) == 0);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(editor->picker == GP100_PATCH_PICK_NONE && runtime->ui.mode == GP100_UI_MODE_EDIT);
+
+    /* Edit mode with an empty chain: EDIT adds. */
+    start_runtime(&fixture, 0u, false);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT && !runtime->ui.patch_editor.replacing);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->chain.count == 1u);
+}
+
+static void test_quick_remove_and_undo(void)
+{
+    patch_fixture_t fixture = {0};
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+    start_runtime(&fixture, 3u, false);
+    const gp100_preset_record_t original = runtime->preset;
+
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    hold_para_for_chain(&fixture);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(runtime->ui.patch_editor.position == 1u);
+
+    /* Setting off (default): holding EDIT does nothing and the release opens the menu. */
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_HOLD);
+    assert(runtime->chain.count == 3u);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_ACTION);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+
+    assert(gp100_settings_set_i16(&runtime->settings, GP100_SETTINGS_QUICK_REMOVE, 1));
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_PRESS);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_HOLD);
+    assert(runtime->chain.count == 2u && runtime->ui.patch_editor.undo_available);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_REPEAT);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);          /* releasing after the hold opens no menu */
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE && runtime->ui.patch_editor.undo_available);
+    assert(runtime->preset_modified);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_PRESS);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);          /* EXIT = undo, stays in Signal Chain */
+    assert(runtime->ui.mode == GP100_UI_MODE_CONSTRUCT && runtime->chain.count == 3u);
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) == 0 && !runtime->preset_modified);
+    assert(!runtime->ui.patch_editor.undo_available);
+
+    /* The undo only lasts until the next action. */
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_HOLD);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(runtime->chain.count == 2u);
+    knob(&fixture, GP100_ENCODER_PARA, false);
+    assert(!runtime->ui.patch_editor.undo_available);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_EDIT && runtime->chain.count == 2u);
+
+    /* The menu's Remove can be undone too. */
+    hold_para_for_chain(&fixture);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    knob(&fixture, GP100_ENCODER_PARA, false);
+    knob(&fixture, GP100_ENCODER_PARA, false);
+    assert(runtime->ui.patch_editor.action == GP100_PATCH_ACTION_REMOVE);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->chain.count == 1u && runtime->ui.patch_editor.undo_available);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->chain.count == 2u && runtime->ui.mode == GP100_UI_MODE_CONSTRUCT);
+}
+
+static void test_guide_and_help(void)
+{
+    patch_fixture_t fixture = {0};
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+    int16_t value;
+    start_runtime(&fixture, 2u, true);
+    const gp100_preset_record_t original = runtime->preset;
+
+    /* Global > Editing switches the quick remove setting; Guide opens from the menu. */
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_GLOBAL);
+    for (size_t i = 0u; i < GP100_GLOBAL_EDITING; ++i) {
+        knob(&fixture, GP100_ENCODER_PARA, true);
+    }
+    assert(runtime->ui.global.menu_item == GP100_GLOBAL_EDITING);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(gp100_settings_get_i16(&runtime->settings, GP100_SETTINGS_QUICK_REMOVE, &value) && value == 1);
+    knob(&fixture, GP100_ENCODER_QUICK_2, false);
+    assert(gp100_settings_get_i16(&runtime->settings, GP100_SETTINGS_QUICK_REMOVE, &value) && value == 0);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(runtime->ui.global.menu_item == GP100_GLOBAL_GUIDE);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.global.view == GP100_GLOBAL_VIEW_GUIDE && runtime->ui.global.guide_page == 0u);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(runtime->ui.global.guide_page == 1u);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.global.guide_page == 2u);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.global.view == GP100_GLOBAL_VIEW_MENU && runtime->ui.mode == GP100_UI_MODE_GLOBAL);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_PLAY);
+
+    /* Holding GLOBAL opens the page for the current screen; EXIT returns to it. */
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_HOLD);
+    assert(runtime->ui.mode == GP100_UI_MODE_GLOBAL && runtime->ui.global.view == GP100_GLOBAL_VIEW_GUIDE);
+    assert(runtime->ui.global.guide_page == gp100_guide_page_for_mode(GP100_UI_MODE_PLAY, false));
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.global.view == GP100_GLOBAL_VIEW_GUIDE);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_PLAY);
+
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    hold_para_for_chain(&fixture);
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_HOLD);
+    assert(runtime->ui.global.guide_page == gp100_guide_page_for_mode(GP100_UI_MODE_CONSTRUCT, false));
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_CONSTRUCT);
+
+    /* Help from an open picker reverts the preview first. */
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    tick(&fixture);
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) != 0);
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_HOLD);
+    assert(runtime->ui.mode == GP100_UI_MODE_GLOBAL &&
+           runtime->ui.global.guide_page == gp100_guide_page_for_mode(GP100_UI_MODE_CONSTRUCT, true));
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) == 0 && !runtime->preset_modified);
+    button(&fixture, GP100_BUTTON_GLOBAL, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.mode == GP100_UI_MODE_CONSTRUCT &&
+           runtime->ui.patch_editor.picker == GP100_PATCH_PICK_NONE);
+    for (size_t page = 0u; page < GP100_GUIDE_PAGE_COUNT; ++page) {
+        assert(gp100_guide_page_title(page) != NULL && gp100_guide_page_line(page, 0u) != NULL);
+    }
+}
+
+static void test_mode_chips(void)
+{
+    static uint16_t pixels[GP100_UI_LOGICAL_WIDTH * GP100_UI_LOGICAL_HEIGHT];
+    patch_fixture_t fixture = {0};
+    gp100_firmware_renderer_t renderer;
+    gp100_display_canvas_t canvas;
+    const gp100_bitmap_font_t *font = gp100_development_font_5x7();
+    start_runtime(&fixture, 2u, true);
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+
+    assert(gp100_display_canvas_init(&canvas, pixels, GP100_UI_LOGICAL_WIDTH,
+                                     GP100_UI_LOGICAL_HEIGHT, GP100_UI_LOGICAL_WIDTH));
+    assert(gp100_firmware_renderer_init_with_fonts(&renderer, gp100_development_font_10x14(), font, font));
+    /* One chip color per mode, at the same spot (top right). */
+    const struct { gp100_ui_mode_t mode; uint16_t color; } chips[] = {
+        {GP100_UI_MODE_PLAY, GP100_UI_MODE_PLAY_COLOR}, {GP100_UI_MODE_EDIT, GP100_UI_MODE_EDIT_COLOR},
+        {GP100_UI_MODE_CONSTRUCT, GP100_UI_MODE_CHAIN_COLOR}, {GP100_UI_MODE_SAVE, GP100_UI_MODE_SAVE_COLOR},
+        {GP100_UI_MODE_GLOBAL, GP100_UI_MODE_GLOBAL_COLOR}, {GP100_UI_MODE_TUNER, GP100_UI_MODE_TUNER_COLOR},
+        {GP100_UI_MODE_DRUM, GP100_UI_MODE_DRUM_COLOR}, {GP100_UI_MODE_LOOPER, GP100_UI_MODE_LOOPER_COLOR}
+    };
+    for (size_t i = 0u; i < sizeof(chips) / sizeof(chips[0]); ++i) {
+        assert(gp100_ui_runtime_set_mode(&runtime->ui, chips[i].mode, &runtime->preset, &runtime->settings));
+        assert(gp100_firmware_renderer_render(&renderer, &canvas, runtime, NULL));
+        assert(pixels[2u * GP100_UI_LOGICAL_WIDTH + 156u] == chips[i].color);
+    }
+    /* The picker is purple; the chip names the state. */
+    assert(gp100_ui_runtime_set_mode(&runtime->ui, GP100_UI_MODE_EDIT, &runtime->preset, &runtime->settings));
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EFFECT);
+    assert(gp100_firmware_renderer_render(&renderer, &canvas, runtime, NULL));
+    assert(pixels[2u * GP100_UI_LOGICAL_WIDTH + 156u] == GP100_UI_MODE_PICKER_COLOR);
+    assert(strcmp(gp100_patch_editor_mode_label(&runtime->ui.patch_editor, runtime->ui.mode), "CHANGE EFFECT") == 0);
+}
+
+static void test_picker_knobs(void)
+{
+    patch_fixture_t fixture = {0};
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+    gp100_patch_editor_t *editor = &runtime->ui.patch_editor;
+    gp100_patch_block_t block;
+    start_runtime(&fixture, 1u, true);
+    const gp100_preset_record_t original = runtime->preset;
+
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(editor->picker == GP100_PATCH_PICK_EFFECT && !editor->preview_muted);
+    /* Quick 2 steps the effect like PARA does. */
+    knob(&fixture, GP100_ENCODER_QUICK_2, true);
+    assert(editor->choice == 1u && editor->preview_pending);
+    tick(&fixture);
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block) && block.algorithm == 1u);
+    /* Quick 3 left: preview off. The sound from before the picker comes back, turning no longer loads anything. */
+    knob(&fixture, GP100_ENCODER_QUICK_3, false);
+    assert(editor->preview_muted && !editor->preview_applied);
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) == 0 && !runtime->preset_modified);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(!editor->preview_pending);
+    tick(&fixture);
+    assert(memcmp(&runtime->preset, &original, sizeof(original)) == 0);
+    knob(&fixture, GP100_ENCODER_QUICK_3, false);          /* already off: nothing changes */
+    assert(editor->preview_muted);
+    /* Quick 3 right: on again, the highlighted effect loads after the tick. */
+    knob(&fixture, GP100_ENCODER_QUICK_3, true);
+    assert(!editor->preview_muted && editor->preview_pending);
+    tick(&fixture);
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block));
+    gp100_picker_effect_t shown;
+    assert(gp100_effect_picker_at(editor->group, editor->choice, &shown));
+    assert(block.family == shown.family && block.algorithm == shown.algorithm);
+    /* PARA keeps what is highlighted even while the preview is off. */
+    knob(&fixture, GP100_ENCODER_QUICK_3, false);
+    knob(&fixture, GP100_ENCODER_QUICK_2, true);
+    button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+    assert(editor->picker == GP100_PATCH_PICK_NONE);
+    assert(gp100_effect_picker_at(editor->group, editor->choice, &shown));
+    assert(gp100_patch_block_at(&runtime->preset, 0u, &block));
+    assert(block.family == shown.family && block.algorithm == shown.algorithm);
+    /* A new picker starts with the preview on again. */
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    assert(!editor->preview_muted);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+
+    /* Without the build switch Quick 3 does nothing. */
+    start_runtime(&fixture, 1u, false);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    knob(&fixture, GP100_ENCODER_QUICK_3, false);
+    assert(!runtime->ui.patch_editor.preview_muted);
+}
+
+/* Left box = Quick 1, middle = Quick 2, right = Quick 3: the lit circle of each box says which one. */
+static bool lit_circle(const uint16_t *pixels, size_t column, size_t circle, uint16_t color)
+{
+    const int32_t center = gp100_knob_box_center(column);
+    const int32_t x = center - 11 + (int32_t)circle * 8 + 2;
+    const int32_t y = GP100_KNOB_BOX_Y + 2 + 2;
+    return pixels[(size_t)y * GP100_UI_LOGICAL_WIDTH + (size_t)x] == color;
+}
+
+static void test_knob_columns(void)
+{
+    static uint16_t pixels[GP100_UI_LOGICAL_WIDTH * GP100_UI_LOGICAL_HEIGHT];
+    patch_fixture_t fixture = {0};
+    gp100_firmware_runtime_t *runtime = &fixture.runtime;
+    gp100_display_canvas_t canvas;
+    gp100_edit_screen_theme_t theme;
+    const gp100_bitmap_font_t *font = gp100_development_font_5x7();
+    start_runtime(&fixture, 3u, true);
+    assert(gp100_display_canvas_init(&canvas, pixels, GP100_UI_LOGICAL_WIDTH, GP100_UI_LOGICAL_HEIGHT,
+                                     GP100_UI_LOGICAL_WIDTH));
+    assert(gp100_edit_screen_default_theme(&theme, NULL, font, font));
+
+    /* Edit page, Signal Chain, effect list and expression assignment all use the same three columns. */
+    for (int screen = 0; screen < 4; ++screen) {
+        button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);          /* normalise: back to Play */
+        button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+        button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+        assert(runtime->ui.mode == GP100_UI_MODE_PLAY);
+        button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+        if (screen >= 1) {
+            hold_para_for_chain(&fixture);
+        }
+        if (screen == 2) {
+            button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+        } else if (screen == 3) {
+            button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+            knob(&fixture, GP100_ENCODER_PARA, false);
+            button(&fixture, GP100_BUTTON_PARA, GP100_BUTTON_RELEASE);
+            assert(runtime->ui.patch_editor.picker == GP100_PATCH_PICK_EXPRESSION);
+        }
+        assert(gp100_patch_editor_render(&runtime->ui.patch_editor, runtime->ui.mode, &runtime->preset,
+                                         0u, false, &canvas, &theme));
+        const uint16_t accent = gp100_patch_editor_accent(&runtime->ui.patch_editor, runtime->ui.mode);
+        /* The expression screen shows only Knob (Quick 1) while nothing is assigned. */
+        const size_t boxes = screen == 3 ? 1u : GP100_KNOB_COLUMNS;
+        for (size_t column = 0u; column < boxes; ++column) {
+            const size_t x = (size_t)gp100_knob_box_left(column) + 1u;
+            assert(pixels[(size_t)(GP100_KNOB_BOX_Y + 12) * GP100_UI_LOGICAL_WIDTH + x] == theme.value_rgb565 ||
+                   pixels[(size_t)(GP100_KNOB_BOX_Y + 12) * GP100_UI_LOGICAL_WIDTH + x] == theme.track_rgb565);
+            for (size_t circle = 0u; circle < GP100_KNOB_COLUMNS; ++circle) {
+                assert(lit_circle(pixels, column, circle, accent) == (circle == column));
+            }
+        }
+        if (screen == 3) {
+            const size_t x = (size_t)gp100_knob_box_left(1) + 1u;
+            assert(pixels[(size_t)(GP100_KNOB_BOX_Y + 12) * GP100_UI_LOGICAL_WIDTH + x] == theme.panel_rgb565);
+        }
+        /* Button hints are chips: white block at the left edge of the bottom line. */
+        assert(pixels[121u * GP100_UI_LOGICAL_WIDTH + 4u] == theme.foreground_rgb565);
+    }
+}
+
+static void test_hint_chips(void)
+{
+    static uint16_t pixels[GP100_UI_LOGICAL_WIDTH * GP100_UI_LOGICAL_HEIGHT];
+    gp100_display_canvas_t canvas;
+    const gp100_bitmap_font_t *font = gp100_development_font_5x7();
+    assert(gp100_display_canvas_init(&canvas, pixels, GP100_UI_LOGICAL_WIDTH, GP100_UI_LOGICAL_HEIGHT,
+                                     GP100_UI_LOGICAL_WIDTH));
+    memset(pixels, 0, sizeof(pixels));
+    assert(gp100_hint_draw(&canvas, font, 3, 120, 154u, "[PARA] keep  [EXIT] cancel", 0xffffu, 0x0001u, 0x1234u, 0u));
+    assert(pixels[121u * GP100_UI_LOGICAL_WIDTH + 4u] == 0xffffu);        /* first chip */
+    /* A hint that is too wide loses its tail instead of running off the screen. */
+    memset(pixels, 0, sizeof(pixels));
+    assert(gp100_hint_draw(&canvas, font, 3, 120, 60u, "[PARA] keep  [EXIT] cancel", 0xffffu, 0x0001u, 0x1234u, 0u));
+    for (size_t x = 64u; x < GP100_UI_LOGICAL_WIDTH; ++x) {
+        assert(pixels[121u * GP100_UI_LOGICAL_WIDTH + x] == 0u);
+    }
 }
 
 typedef struct processor_fixture {
@@ -686,6 +1147,14 @@ int main(void)
     test_native_render();
     test_effect_picker_groups();
     test_picker_cross_family_replace();
+    test_live_preview();
+    test_picker_navigation();
+    test_quick_remove_and_undo();
+    test_guide_and_help();
+    test_mode_chips();
+    test_picker_knobs();
+    test_knob_columns();
+    test_hint_chips();
     test_stomp_thumbnails();
     test_limits();
     test_independent_processors();

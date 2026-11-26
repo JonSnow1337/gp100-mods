@@ -283,3 +283,24 @@ def test_opengp100_fine_master_checkbox_sets_the_flag(qapp, tmp_path, dialogs, m
         flags = features.read(U.section0_of(out.read_bytes()))
         assert flags is not None and bool(flags & features.FINE_MASTER_VOLUME) == checked
     w.close()
+
+
+@needs_official
+def test_opengp100_live_preview_checkbox_sets_the_flag(qapp, tmp_path, dialogs, monkeypatch):
+    """The preview is on by default (flag clear); unticking the box sets flag bit 2 (NO_LIVE_PREVIEW) and leaves the other flags alone."""
+    from gp100mods import features, update_file as U
+    w = MainWindow(firmwares=bundle.load_manifest(), valeton_dir=tmp_path / "vreal")
+    w.settings.clear()
+    w.set_valeton(V21_FILE)
+    w.show_page(0)
+    default_ready(w)
+    page = w.og
+    assert page.live_preview.isVisibleTo(page) and page.live_preview.isChecked()
+    for checked in (True, False):
+        page.live_preview.setChecked(checked)
+        out = tmp_path / f"lp{checked}.bin"; save_to(monkeypatch, out)
+        page.generate_file()
+        flags = features.read(U.section0_of(out.read_bytes()))
+        assert flags is not None and bool(flags & features.NO_LIVE_PREVIEW) == (not checked)
+        assert flags & features.FINE_MASTER_VOLUME          # the fine-MASTER box (default on) is unaffected
+    w.close()

@@ -1,5 +1,8 @@
 #include "firmware_renderer.h"
 
+#include "ui/render/mode_chip.h"
+#include "ui/screens/guide_screen.h"
+
 #include "ui_palette.h"
 
 #include <string.h>
@@ -151,6 +154,10 @@ static bool render_global(
                gp100_global_screen_render(
                    canvas, &snapshot, &renderer->global);
     }
+    case GP100_GLOBAL_VIEW_GUIDE:
+        return gp100_guide_screen_render(
+            canvas, renderer->global.large_font, renderer->global.regular_font,
+            renderer->global.small_font, global->guide_page);
     case GP100_GLOBAL_VIEW_EXPRESSION: {
         gp100_expression_settings_snapshot_t snapshot;
 
@@ -217,7 +224,7 @@ static bool render_hardware_test(
         canvas, &snapshot, &renderer->hardware_test);
 }
 
-bool gp100_firmware_renderer_render(
+static bool render_screen(
     const gp100_firmware_renderer_t *renderer,
     gp100_display_canvas_t *canvas,
     const gp100_firmware_runtime_t *runtime,
@@ -256,4 +263,24 @@ bool gp100_firmware_renderer_render(
     default:
         return false;
     }
+}
+
+bool gp100_firmware_renderer_render(
+    const gp100_firmware_renderer_t *renderer,
+    gp100_display_canvas_t *canvas,
+    const gp100_firmware_runtime_t *runtime,
+    const gp100_firmware_render_context_t *context)
+{
+    if (!render_screen(renderer, canvas, runtime, context)) {
+        return false;
+    }
+    /* The editor draws its own chip (it also names the picker and menu states). */
+    if (runtime->ui.mode == GP100_UI_MODE_EDIT || runtime->ui.mode == GP100_UI_MODE_CONSTRUCT) {
+        return true;
+    }
+    const char *label = gp100_mode_chip_label(runtime->ui.mode);
+    return label == NULL ||
+           gp100_mode_chip_draw(canvas, renderer->global.small_font, label,
+                                gp100_mode_chip_color(runtime->ui.mode),
+                                renderer->global.background_rgb565, 158, 1);
 }

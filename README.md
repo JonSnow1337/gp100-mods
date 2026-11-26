@@ -5,8 +5,10 @@ with a few mods. You install the result with the **official GP-100 app**; no J-L
 footswitch+PARA recovery stay untouched.
 
 <p>
-  <img src="docs/img/screen-main.jpg" height="240" alt="OpenGP100 main screen">
-  <img src="docs/img/screen-signal-chain.jpg" height="240" alt="OpenGP100 signal chain editor">
+  <img src="docs/img/screen-play.png" height="200" alt="Play screen">
+  <img src="docs/img/screen-edit.png" height="200" alt="Edit screen">
+  <img src="docs/img/screen-effect-picker.png" height="200" alt="Effect list with live preview">
+  <img src="docs/img/screen-signal-chain.png" height="200" alt="Signal chain editor">
 </p>
 
 > **Unofficial.** Not affiliated with Valeton. Flashing can leave a device unusable; read [docs/recovery.md](docs/recovery.md)
@@ -17,10 +19,12 @@ footswitch+PARA recovery stay untouched.
 OpenGP100 is a community firmware written from scratch by Aleksey Khristolyubov (Reddit: Natural-Mechanic7484). Compared to
 the original firmware it has:
 
-* **A better UI.**
+* **A better UI.** Mode tags in color, one list for choosing effects (with live preview while you scroll), EDIT changes the current
+  effect directly, EXIT always goes back, and an on-pedal guide (hold GLOBAL). See [pedal-ui](docs/pedal-ui.md).
 * **An editable signal chain.** Add, remove and reorder effects freely.
 * **Any preset in any slot.**
 * **Any effect in any position**, even the same effect several times in one chain.
+* **New pedal/effects simulations.** Six new effects: Studio Comp, Limitter, Muff, Octaver2, Balls and Envelope, plus a global output limiter. See [new effects](docs/new-effects.md).
 
 **Trade-off:** while OpenGP100 is installed, the official GP-100 app only shows "Device Connected" and can't edit patches.
 To use it again, flash another firmware in **recovery mode** ([docs/recovery.md](docs/recovery.md)): one made by this app, or
@@ -38,7 +42,7 @@ Run the packaged **GP-100 Firmware Builder**, or from source: `pip install -e ".
 
 1. On first run, give it your copy of Valeton's official **GP-100 Firmware V2.1** (the GP-100 app can download it). It checks
    the SHA-256, refuses anything else and keeps a local copy. Nothing is uploaded.
-2. Pick a mode. For OpenGP100 you can tick **Finer MASTER volume steps**, keep or untick the **new drum sounds**
+2. Pick a mode. For OpenGP100 you can tick **Finer MASTER volume steps**, keep or untick **live preview** of effects while browsing the effect list, keep or untick the **new drum sounds**
    (on by default; untick for Valeton's original drum sounds; the rhythms are always Valeton's), add `.prst` presets (installed in P01, P02, ...)
    and choose a boot animation.
 3. Click **Generate firmware** and install the file with the official GP-100 app like any update.
@@ -58,7 +62,7 @@ and everything else is from your official file; in original+mods mode, section 0
   from your official file when you generate (hash-checked, see `firmware/opengp100/valeton_fills.json`).
 * `src/gp100mods/data/drums/`: the new drum sounds (CrocellKit, CC BY 4.0). See [drums](docs/drums.md).
 
-More: [drums](docs/drums.md), [architecture](docs/architecture.md), [boot chain](docs/boot-chain.md), [animation format](docs/boot-animation-format.md),
+More: [pedal UI](docs/pedal-ui.md), [drums](docs/drums.md), [architecture](docs/architecture.md), [boot chain](docs/boot-chain.md), [animation format](docs/boot-animation-format.md),
 [OpenGP100 port](docs/opengp100-port.md), [legal](docs/legal.md).
 
 ## Building (developers)
@@ -68,7 +72,7 @@ Needs your official V2.1 file, an Arm GNU toolchain (10.3), CMake and git. Paths
 ```sh
 pip install -e .
 python -m gp100mods opengp100-build --stock-fw GP-100-Firmware-V2.1.bin --fetch-deps \
-    --out opengp100-update.bin --register-version 0.8 --register-notes "what changed"
+    --out opengp100-update.bin --register-version 0.3.1 --register-notes "what changed"
 ```
 
 This builds OpenGP100 as a Valeton update file, adds the app's reserved areas and (with `--register-version`) adds it to the bundle.

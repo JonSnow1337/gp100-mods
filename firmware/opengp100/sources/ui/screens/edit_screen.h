@@ -71,6 +71,7 @@ typedef struct gp100_edit_screen_snapshot {
     size_t occupied_count;
     gp100_edit_chain_card_t cards[GP100_EDIT_CHAIN_SIZE];
     const char *mode_label;
+    uint16_t accent_rgb565;      /* mode chip and panel line color; 0 = theme->selected_rgb565 */
     const char *selection_label;
     const char *panel_title;
     const char *panel_value;
