@@ -159,6 +159,7 @@ def main():
                                  directory=a.register_dir, fills_spec=json.loads(recipe.read_text())["fills"])
         print(f"registered {fw.id} in {fw.path.parent} ({len(fw.fills)} Valeton region(s) blanked)")
     print(f"\nDone: {a.out}\nInstall it with the GP-100 app (firmware update). Presets are erased by every update.\n"
+          "Already running OpenGP100? Use recovery mode for the update, no need for the stock firmware first.\n"
           "Recovery if anything looks wrong: unplug power, hold both footswitches + PARA, open the app, plug power in.")
 
 

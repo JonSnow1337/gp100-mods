@@ -5,6 +5,7 @@
 #include "storage/patch_chain.h"
 #include "ui/firmware_renderer.h"
 #include "ui/render/knob_ui.h"
+#include "ui/screens/global_screen.h"
 #include "ui/screens/guide_screen.h"
 #include "ui/ui_palette.h"
 
@@ -488,6 +489,33 @@ static void test_unsaved_warning(void)
     const uint16_t before = runtime->ui.logical_preset;
     button(&fixture, GP100_BUTTON_FOOTSWITCH_MINUS, GP100_BUTTON_RELEASE);
     assert(runtime->ui.logical_preset != before && !runtime->ui.unsaved_warning);
+
+    /* Global > Editing, Quick 3: warning off. Default (0) is on; PARA then switches at once. */
+    int16_t value = -1;
+    assert(gp100_settings_get_i16(&runtime->settings, GP100_SETTINGS_UNSAVED_WARNING_OFF, &value) &&
+           value == 0);
+    assert(gp100_global_adjust_panel_setting(&runtime->settings, GP100_GLOBAL_EDITING, 0u, 2u, false));
+    assert(gp100_settings_get_i16(&runtime->settings, GP100_SETTINGS_UNSAVED_WARNING_OFF, &value) &&
+           value == 1);
+    {
+        gp100_global_screen_snapshot_t snap;
+        gp100_global_controller_t global;
+        gp100_global_controller_init(&global);
+        assert(gp100_global_screen_snapshot_from_settings(&snap, &runtime->settings,
+                                                          GP100_GLOBAL_EDITING, 0u, "x"));
+        assert(snap.controls[2].present && strcmp(snap.controls[2].value, "NO WARN") == 0);
+        assert(!snap.controls[0].present);
+    }
+    runtime->clock_ms = 9000u;
+    button(&fixture, GP100_BUTTON_EDIT, GP100_BUTTON_RELEASE);
+    knob(&fixture, GP100_ENCODER_QUICK_2, true);
+    button(&fixture, GP100_BUTTON_EXIT, GP100_BUTTON_RELEASE);
+    assert(runtime->preset_modified && runtime->ui.mode == GP100_UI_MODE_PLAY);
+    knob(&fixture, GP100_ENCODER_PARA, true);
+    assert(!runtime->ui.unsaved_warning && !runtime->preset_modified);
+    assert(gp100_global_adjust_panel_setting(&runtime->settings, GP100_GLOBAL_EDITING, 0u, 2u, true));
+    assert(gp100_settings_get_i16(&runtime->settings, GP100_SETTINGS_UNSAVED_WARNING_OFF, &value) &&
+           value == 0);
 }
 
 static void test_stomp_thumbnails(void)

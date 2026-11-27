@@ -15,3 +15,16 @@ three read pressed it boots the updater image regardless of what is in the main 
 [boot-chain.md](boot-chain.md).
 
 Every firmware update erases the user presets: back them up first.
+
+## Upgrading OpenGP100 to a newer version
+
+If OpenGP100 is already on your pedal you do **not** have to go back to the stock V2.1 first. Recovery mode accepts any
+valid update file, including one made by this app:
+
+1. Generate the new OpenGP100 firmware with the app (as usual; add your `.prst` presets again, they are erased by the update).
+2. Unplug the power adapter, keep USB connected, open the official GP-100 app.
+3. Hold **both footswitches and the PARA knob**, plug the power in while holding.
+4. Pick the newly generated file and install it with GP100 app.
+
+The "flash V2.1, then flash the mods" route is only needed the first time, when the pedal still runs Valeton's original
+firmware (the official app's normal update button works there).

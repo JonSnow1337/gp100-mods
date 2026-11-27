@@ -23,6 +23,8 @@ MEDIA_FILTER = ("Animations, videos and images (*.gif *.apng *.webp *.png *.jpg 
 INSTALL_HELP = ("1. Click Generate and save the file.\n"
                 "2. Connect the GP-100 by USB and open the official GP-100 app.\n"
                 "3. Use its firmware update and pick the saved file. Every firmware update erases your presets - back them up first.\n\n"
+                "Already running OpenGP100 and updating to a newer version? You do NOT need the stock firmware: generate the new file, "
+                "put the pedal in recovery mode (below) and install the new file from there.\n\n"
                 "If something goes wrong: unplug the power (keep USB), hold BOTH footswitches and the PARA knob, open the GP-100 app, "
                 "then plug the power back in while holding. It will let you install a firmware file again.")
 

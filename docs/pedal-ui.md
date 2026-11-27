@@ -41,8 +41,8 @@ appear as white chips on the bottom line, for example `[PARA] keep  [EXIT] cance
 * **Hold PARA** switches between Edit and Signal Chain. **Hold GLOBAL** opens the guide for the current screen.
 * A **\*** next to the preset number means unsaved edits. In Play, turning PARA with unsaved edits first shows **UNSAVED CHANGES**;
   turn PARA again to go on (the edits are lost) or press SAVE to keep them. The footswitches never ask, so switching presets on
-  stage is always instant.
-* On the Edit and Signal Chain screens the bottom line alternates between two hints every few seconds (for example `[HOLD PARA] signal chain`).
+  stage is always instant. The warning can be switched off in **GLOBAL > Editing** (Quick 3, "Unsaved": WARN / NO WARN).
+* On the Edit and Signal Chain screens the bottom line alternates between two hints every second or two (for example `[HOLD PARA] signal chain`).
   Touch any control and the first hint comes back.
 
 ## Change an effect (Edit screen)
@@ -82,6 +82,7 @@ Removing with the menu, or (if enabled) by holding EDIT, shows "Removed - EXIT t
 its settings; any other action makes the removal final.
 
 **GLOBAL > Editing > Hold EDIT** (off by default) lets you remove the selected effect in the Signal Chain by holding EDIT.
+The same page has **Unsaved** (on by default): the "UNSAVED CHANGES" warning in Play when you turn PARA with unsaved edits.
 
 ## Live preview
 

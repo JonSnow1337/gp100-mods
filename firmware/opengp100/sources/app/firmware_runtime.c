@@ -310,7 +310,11 @@ bool gp100_firmware_runtime_handle_event(
             gp100_ui_control_dismisses_warning(&decoded)) {
             const bool para_turn = decoded.kind == GP100_UI_CONTROL_ENCODER &&
                                    decoded.control == GP100_ENCODER_PARA;
-            if (runtime->ui.mode == GP100_UI_MODE_PLAY && runtime->preset_modified && para_turn) {
+            int16_t warning_off = 0;
+            (void)gp100_settings_get_i16(&runtime->settings, GP100_SETTINGS_UNSAVED_WARNING_OFF,
+                                         &warning_off);
+            if (runtime->ui.mode == GP100_UI_MODE_PLAY && runtime->preset_modified && para_turn &&
+                warning_off != 1) {
                 if (!warning_was_shown) {
                     runtime->ui.unsaved_warning = true;
                     runtime->ui.unsaved_warning_ms = runtime->clock_ms;

@@ -109,7 +109,7 @@ static bool s_previewWaiting;
 static uint32_t s_previewDeadlineMs;
 static uint32_t s_hintDeadlineMs;     /* next swap of the two hints on the Edit / Signal Chain screens */
 #define GP100_PREVIEW_DEBOUNCE_MS 140u
-#define GP100_HINT_SWAP_MS 3000u
+#define GP100_HINT_SWAP_MS 1500u
 static gp100_settings_writer_t s_settingsWriter;
 static gp100_settings_record_t s_settingsToSave;
 static bool s_audioRhythmEnabled;

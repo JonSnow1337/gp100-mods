@@ -50,6 +50,10 @@ Run the packaged **GP-100 Firmware Builder**, or from source: `pip install -e ".
 **Tested:** firmware V2.1 and GP-100 app 1.5.0, on Windows and WSL. **Not tested:** other app versions, macOS, native Linux.
 Please report what happens if you try them.
 
+**Updating OpenGP100 later:** you do not need to go back to stock. Generate the new firmware, put the pedal in
+**recovery mode** (both footswitches + PARA held while plugging power in, official app open) and install the new file
+([docs/recovery.md](docs/recovery.md)). Going through V2.1 is only for the first install.
+
 **Before you flash:** back up your presets, keep the pedal powered and the USB cable untouched, and know the recovery steps.
 
 ## How it works

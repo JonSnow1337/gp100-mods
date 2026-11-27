@@ -67,6 +67,7 @@ typedef enum gp100_settings_field {
     GP100_SETTINGS_LANGUAGE_INDEX = 0x12,
     GP100_SETTINGS_LOOPER_POSITION = 0x14,
     GP100_SETTINGS_QUICK_REMOVE = 0x16,   /* 0/1: holding EDIT in Signal Chain removes the effect (a free flag word; repaired to 0/1) */
+    GP100_SETTINGS_UNSAVED_WARNING_OFF = 0x18, /* 0/1: 1 = no "unsaved changes" warning when PARA changes preset (the other free flag word; 0 = warn keeps old records unchanged) */
     GP100_SETTINGS_LOOP_RECORD_VOLUME = 0x1a,
     GP100_SETTINGS_LOOP_PLAYBACK_VOLUME = 0x1c,
     GP100_SETTINGS_MASTER_VOLUME = 0x1e,

@@ -5,8 +5,8 @@
       "label": "OpenGP100",
       "version": "0.3.2",
       "file": "opengp100-0.3.2.sec0",
-      "sha256": "4538572dbbf1469ba875898095fe8a3efe5f6c037374960250d177f51180f826",
-      "notes": "OpenGP100 c696365 (6 new effects, output limiter) with the reworked pedal UI: unsaved-changes star and warning, uniform effect frames, group-wrapping effect list, chain edit without effect change, alternating hint bar, Clear preset",
+      "sha256": "699d22d04630fa469855b04a1eaf2e21ff51a06b92c780f28bf4f0a90f903a21",
+      "notes": "",
       "features": [],
       "fills": [
         {

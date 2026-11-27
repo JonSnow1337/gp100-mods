@@ -389,11 +389,14 @@ bool gp100_global_adjust_panel_setting(
             settings, GP100_SETTINGS_FOOTSWITCH_MODE, increase);
         break;
     case GP100_GLOBAL_EDITING:
-        if (page_index != 0u || control != 1u) {
+        if (page_index != 0u || (control != 1u && control != 2u)) {
             return false;
         }
-        adjusted = set_boolean_setting(
-            settings, GP100_SETTINGS_QUICK_REMOVE, increase);
+        /* Quick 2: Hold EDIT removes. Quick 3: unsaved-changes warning (stored inverted so
+         * that 0, the value of every existing record, means the warning is on). */
+        adjusted = control == 1u
+            ? set_boolean_setting(settings, GP100_SETTINGS_QUICK_REMOVE, increase)
+            : set_boolean_setting(settings, GP100_SETTINGS_UNSAVED_WARNING_OFF, !increase);
         break;
     default:
         return false;
@@ -1219,6 +1222,10 @@ bool gp100_global_screen_snapshot_from_settings(
             !set_control(&next.controls[1], "Hold EDIT",
                          value == 1 ? "REMOVE" : "OFF",
                          (float)value, 0.0f, 1.0f)) return false;
+        if (!read_setting(settings, GP100_SETTINGS_UNSAVED_WARNING_OFF, &value) ||
+            !set_control(&next.controls[2], "Unsaved",
+                         value == 1 ? "NO WARN" : "WARN",
+                         value == 1 ? 0.0f : 1.0f, 0.0f, 1.0f)) return false;
         break;
     case GP100_GLOBAL_GUIDE:
         (void)copy_text(next.detail, sizeof(next.detail), "Press PARA");
